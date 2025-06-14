@@ -2,12 +2,12 @@
 import { useState, useRef } from 'react';
 import { scheduleAllSignalNotifications } from '@/utils/backgroundTaskManager';
 import { Signal } from '@/types/signal';
-import { useAudioManager } from './useAudioManager';
 
 export const useAntidelayManager = (
   savedSignals: Signal[],
   antidelaySeconds: number,
-  setAntidelaySeconds: (seconds: number) => void
+  setAntidelaySeconds: (seconds: number) => void,
+  audioManager: { triggerRingtoneSelection: () => void; setUseDefaultSound: () => void; customRingtone: string | null }
 ) => {
   const [showAntidelayDialog, setShowAntidelayDialog] = useState(false);
   const [showSoundDialog, setShowSoundDialog] = useState(false);
@@ -16,7 +16,6 @@ export const useAntidelayManager = (
   
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressRef = useRef(false);
-  const { triggerRingtoneSelection, setUseDefaultSound } = useAudioManager();
 
   // Set Ring button handlers
   const handleSetRingMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
@@ -60,12 +59,12 @@ export const useAntidelayManager = (
   // Sound selection handlers
   const handleSelectCustomSound = () => {
     setShowSoundDialog(false);
-    triggerRingtoneSelection();
+    audioManager.triggerRingtoneSelection();
   };
 
   const handleSelectDefaultSound = () => {
     setShowSoundDialog(false);
-    setUseDefaultSound();
+    audioManager.setUseDefaultSound();
   };
 
   const handleCloseSoundDialog = () => {

@@ -8,6 +8,7 @@ import {
 import { useSignalState } from './useSignalState';
 import { useRingManager } from './useRingManager';
 import { useAntidelayManager } from './useAntidelayManager';
+import { useAudioManager } from './useAudioManager';
 
 export const useSignalTracker = () => {
   const {
@@ -21,10 +22,13 @@ export const useSignalTracker = () => {
     updateSignalTriggered
   } = useSignalState();
 
+  // Single audio manager instance to be shared
+  const audioManager = useAudioManager();
+
   const {
     ringOffButtonPressed,
     handleRingOff
-  } = useRingManager(savedSignals, antidelaySeconds, updateSignalTriggered);
+  } = useRingManager(savedSignals, antidelaySeconds, updateSignalTriggered, audioManager.customRingtone);
 
   const {
     showAntidelayDialog,
@@ -40,7 +44,7 @@ export const useSignalTracker = () => {
     handleCloseSoundDialog,
     handleAntidelaySubmit,
     handleAntidelayCancel
-  } = useAntidelayManager(savedSignals, antidelaySeconds, setAntidelaySeconds);
+  } = useAntidelayManager(savedSignals, antidelaySeconds, setAntidelaySeconds, audioManager);
 
   // Start background task when app loads and signals exist
   useEffect(() => {

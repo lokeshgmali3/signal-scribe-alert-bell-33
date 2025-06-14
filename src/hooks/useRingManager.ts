@@ -4,12 +4,12 @@ import { Signal } from '@/types/signal';
 import { checkSignalTime } from '@/utils/signalUtils';
 import { playCustomRingtone } from '@/utils/audioUtils';
 import { requestWakeLock, releaseWakeLock } from '@/utils/wakeLockUtils';
-import { useAudioManager } from './useAudioManager';
 
 export const useRingManager = (
   savedSignals: Signal[],
   antidelaySeconds: number,
-  onSignalTriggered: (signal: Signal) => void
+  onSignalTriggered: (signal: Signal) => void,
+  customRingtone: string | null
 ) => {
   const [isRinging, setIsRinging] = useState(false);
   const [currentRingingSignal, setCurrentRingingSignal] = useState<Signal | null>(null);
@@ -19,7 +19,6 @@ export const useRingManager = (
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioInstancesRef = useRef<HTMLAudioElement[]>([]);
   const audioContextsRef = useRef<AudioContext[]>([]);
-  const { customRingtone } = useAudioManager();
 
   console.log('useRingManager - Current customRingtone:', customRingtone);
 
