@@ -10,12 +10,13 @@ export const useAntidelayManager = (
   setAntidelaySeconds: (seconds: number) => void
 ) => {
   const [showAntidelayDialog, setShowAntidelayDialog] = useState(false);
+  const [showSoundDialog, setShowSoundDialog] = useState(false);
   const [antidelayInput, setAntidelayInput] = useState('');
   const [setRingButtonPressed, setSetRingButtonPressed] = useState(false);
   
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressRef = useRef(false);
-  const { triggerRingtoneSelection } = useAudioManager();
+  const { triggerRingtoneSelection, setUseDefaultSound } = useAudioManager();
 
   // Set Ring button handlers
   const handleSetRingMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
@@ -42,9 +43,9 @@ export const useAntidelayManager = (
       longPressTimerRef.current = null;
     }
     
-    // If it wasn't a long press and dialog is not showing, trigger ringtone selection
+    // If it wasn't a long press and antidelay dialog is not showing, show sound selection dialog
     if (!isLongPressRef.current && !showAntidelayDialog) {
-      triggerRingtoneSelection();
+      setShowSoundDialog(true);
     }
   };
 
@@ -54,6 +55,21 @@ export const useAntidelayManager = (
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+  };
+
+  // Sound selection handlers
+  const handleSelectCustomSound = () => {
+    setShowSoundDialog(false);
+    triggerRingtoneSelection();
+  };
+
+  const handleSelectDefaultSound = () => {
+    setShowSoundDialog(false);
+    setUseDefaultSound();
+  };
+
+  const handleCloseSoundDialog = () => {
+    setShowSoundDialog(false);
   };
 
   // Antidelay dialog handlers
@@ -78,12 +94,16 @@ export const useAntidelayManager = (
 
   return {
     showAntidelayDialog,
+    showSoundDialog,
     antidelayInput,
     setAntidelayInput,
     setRingButtonPressed,
     handleSetRingMouseDown,
     handleSetRingMouseUp,
     handleSetRingMouseLeave,
+    handleSelectCustomSound,
+    handleSelectDefaultSound,
+    handleCloseSoundDialog,
     handleAntidelaySubmit,
     handleAntidelayCancel
   };

@@ -28,12 +28,16 @@ export const useSignalTracker = () => {
 
   const {
     showAntidelayDialog,
+    showSoundDialog,
     antidelayInput,
     setAntidelayInput,
     setRingButtonPressed,
     handleSetRingMouseDown,
     handleSetRingMouseUp,
     handleSetRingMouseLeave,
+    handleSelectCustomSound,
+    handleSelectDefaultSound,
+    handleCloseSoundDialog,
     handleAntidelaySubmit,
     handleAntidelayCancel
   } = useAntidelayManager(savedSignals, antidelaySeconds, setAntidelaySeconds);
@@ -64,6 +68,7 @@ export const useSignalTracker = () => {
     ringOffButtonPressed,
     setRingButtonPressed,
     showAntidelayDialog,
+    showSoundDialog,
     antidelayInput,
     setAntidelayInput,
     antidelaySeconds,
@@ -72,6 +77,9 @@ export const useSignalTracker = () => {
     handleSetRingMouseDown,
     handleSetRingMouseUp,
     handleSetRingMouseLeave,
+    handleSelectCustomSound,
+    handleSelectDefaultSound,
+    handleCloseSoundDialog,
     handleAntidelaySubmit,
     handleAntidelayCancel
   };

@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 
 export const useAudioManager = () => {
   const [customRingtone, setCustomRingtone] = useState<string | null>(null);
+  const [useDefault, setUseDefault] = useState(true); // Default to true initially
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export const useAudioManager = () => {
     if (file) {
       const url = URL.createObjectURL(file);
       setCustomRingtone(url);
+      setUseDefault(false);
       console.log('Custom ringtone set:', file.name);
     }
   };
@@ -39,8 +41,18 @@ export const useAudioManager = () => {
     }
   };
 
+  const setUseDefaultSound = () => {
+    setUseDefault(true);
+    setCustomRingtone(null);
+    console.log('Default sound selected');
+  };
+
+  // Return null for customRingtone if useDefault is true
+  const effectiveRingtone = useDefault ? null : customRingtone;
+
   return {
-    customRingtone,
-    triggerRingtoneSelection
+    customRingtone: effectiveRingtone,
+    triggerRingtoneSelection,
+    setUseDefaultSound
   };
 };
