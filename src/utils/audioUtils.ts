@@ -1,5 +1,6 @@
 
 export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioContext[]>) => {
+  console.log('Creating default beep audio');
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   const oscillator = audioContext.createOscillator();
   const gainNode = audioContext.createGain();
@@ -24,19 +25,25 @@ export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioC
 };
 
 export const playCustomRingtone = (customRingtone: string | null, audioContextsRef?: React.MutableRefObject<AudioContext[]>): Promise<HTMLAudioElement | null> => {
+  console.log('playCustomRingtone called with:', customRingtone);
+  
   return new Promise((resolve, reject) => {
     if (customRingtone) {
+      console.log('Playing custom ringtone:', customRingtone);
       const audio = new Audio(customRingtone);
       audio.loop = true; // Loop the ringtone
       audio.play().then(() => {
+        console.log('Custom ringtone started playing successfully');
         resolve(audio);
       }).catch(err => {
         console.log('Error playing custom ringtone:', err);
+        console.log('Falling back to default beep');
         // Fallback to default beep
         createBeepAudio(audioContextsRef);
         resolve(null);
       });
     } else {
+      console.log('No custom ringtone provided, playing default beep');
       // Play default beep
       createBeepAudio(audioContextsRef);
       resolve(null);

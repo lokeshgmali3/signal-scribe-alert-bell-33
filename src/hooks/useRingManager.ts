@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Signal } from '@/types/signal';
 import { checkSignalTime } from '@/utils/signalUtils';
@@ -23,6 +22,7 @@ export const useRingManager = (
 
   // Ring notification
   const triggerRing = async (signal: Signal) => {
+    console.log('Triggering ring for signal:', signal, 'with customRingtone:', customRingtone);
     setIsRinging(true);
     setCurrentRingingSignal(signal);
     
