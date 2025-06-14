@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { Signal } from '@/types/signal';
 import { checkSignalTime } from '@/utils/signalUtils';
@@ -20,9 +21,15 @@ export const useRingManager = (
   const audioContextsRef = useRef<AudioContext[]>([]);
   const { customRingtone } = useAudioManager();
 
-  // Ring notification
+  console.log('useRingManager - Current customRingtone:', customRingtone);
+
+  // Ring notification - moved inside useEffect to capture fresh customRingtone value
   const triggerRing = async (signal: Signal) => {
-    console.log('Triggering ring for signal:', signal, 'with customRingtone:', customRingtone);
+    // Get fresh customRingtone value at the time of triggering
+    const audioManager = useAudioManager();
+    const currentCustomRingtone = audioManager.customRingtone;
+    
+    console.log('Triggering ring for signal:', signal, 'with customRingtone:', currentCustomRingtone);
     setIsRinging(true);
     setCurrentRingingSignal(signal);
     
@@ -36,7 +43,7 @@ export const useRingManager = (
     }
 
     // Play custom ringtone or default beep and track audio instances
-    const audio = await playCustomRingtone(customRingtone, audioContextsRef);
+    const audio = await playCustomRingtone(currentCustomRingtone, audioContextsRef);
     if (audio instanceof HTMLAudioElement) {
       audioInstancesRef.current.push(audio);
     }
@@ -62,7 +69,7 @@ export const useRingManager = (
         }
       };
     }
-  }, [savedSignals, customRingtone, antidelaySeconds]);
+  }, [savedSignals, customRingtone, antidelaySeconds]); // Add customRingtone to dependencies
 
   // Ring off button handler - stops ALL audio immediately
   const handleRingOff = () => {
