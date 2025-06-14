@@ -12,7 +12,7 @@ export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioC
   oscillator.type = 'sine';
   gainNode.gain.value = 0.3;
   
-  const duration = 1000; // 1 second
+  const duration = 3000; // 3 seconds for default beep
   oscillator.start();
   oscillator.stop(audioContext.currentTime + duration / 1000);
   
@@ -31,7 +31,9 @@ export const playCustomRingtone = (customRingtone: string | null, audioContextsR
     if (customRingtone) {
       console.log('Playing custom ringtone:', customRingtone);
       const audio = new Audio(customRingtone);
-      audio.loop = true; // Loop the ringtone
+      audio.loop = false; // Don't loop - play only once
+      audio.volume = 0.8; // Set volume
+      
       audio.play().then(() => {
         console.log('Custom ringtone started playing successfully');
         resolve(audio);
