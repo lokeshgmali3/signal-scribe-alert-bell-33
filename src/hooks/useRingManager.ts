@@ -23,12 +23,8 @@ export const useRingManager = (
 
   console.log('useRingManager - Current customRingtone:', customRingtone);
 
-  // Ring notification - moved inside useEffect to capture fresh customRingtone value
-  const triggerRing = async (signal: Signal) => {
-    // Get fresh customRingtone value at the time of triggering
-    const audioManager = useAudioManager();
-    const currentCustomRingtone = audioManager.customRingtone;
-    
+  // Ring notification
+  const triggerRing = async (signal: Signal, currentCustomRingtone: string | null) => {
     console.log('Triggering ring for signal:', signal, 'with customRingtone:', currentCustomRingtone);
     setIsRinging(true);
     setCurrentRingingSignal(signal);
@@ -58,7 +54,7 @@ export const useRingManager = (
       intervalRef.current = setInterval(() => {
         savedSignals.forEach(signal => {
           if (checkSignalTime(signal, antidelaySeconds)) {
-            triggerRing(signal);
+            triggerRing(signal, customRingtone);
           }
         });
       }, 1000);
@@ -69,7 +65,7 @@ export const useRingManager = (
         }
       };
     }
-  }, [savedSignals, customRingtone, antidelaySeconds]); // Add customRingtone to dependencies
+  }, [savedSignals, customRingtone, antidelaySeconds]);
 
   // Ring off button handler - stops ALL audio immediately
   const handleRingOff = () => {
