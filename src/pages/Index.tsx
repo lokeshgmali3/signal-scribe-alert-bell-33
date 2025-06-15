@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useSignalTracker } from '@/hooks/useSignalTracker';
 import SignalInput from '@/components/SignalInput';
@@ -37,6 +36,8 @@ const Index = () => {
         Notification.requestPermission();
       }
     }
+    // Touch audio manager/background service (some mobile browsers may otherwise miss initial setup!)
+    import('@/utils/backgroundService').then(mod => mod.backgroundService);
   }, []);
 
   return (

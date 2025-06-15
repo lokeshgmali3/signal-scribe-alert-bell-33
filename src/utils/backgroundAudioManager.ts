@@ -32,9 +32,11 @@ export class BackgroundAudioManager {
   setCustomRingtone(ringtone: string | null) {
     console.log('🚀 Background service custom ringtone set:', ringtone ? 'custom file' : 'null');
     this.customRingtone = ringtone;
-    // If setting a custom ringtone, convert it to base64 for background use
+    // Convert and store custom audio for background use synchronously (so it's available before any triggers)
     if (ringtone) {
       this.convertRingtoneToBase64(ringtone);
+    } else {
+      this.cachedAudio = null;
     }
   }
 
@@ -63,6 +65,7 @@ export class BackgroundAudioManager {
       });
     } catch (error) {
       console.error('🚀 Failed to convert ringtone to base64:', error);
+      this.cachedAudio = null;
     }
   }
 
@@ -117,14 +120,13 @@ export class BackgroundAudioManager {
       console.log('🚀 Playing background audio for signal:', signal?.timestamp || 'manual trigger');
       await this.requestAudioFocus();
 
-      // --- RELIABILITY FIX: (mobile/offscreen) ---
-      // If customRingtone is set but cachedAudio is missing for any reason, re-attempt caching
+      // Make sure custom audio is cached before any play (if set):
       if (this.customRingtone && !(this.cachedAudio && this.cachedAudio.base64)) {
         console.warn('🚀 Custom ringtone selected but no cached audio found. Re-caching now before playback.');
         await this.convertRingtoneToBase64(this.customRingtone);
       }
 
-      // Check if we have custom audio data for background playback
+      // Play only if custom audio exists
       if (this.hasCustomAudio()) {
         console.log('🚀 Using cached custom audio for background playback');
         await playCustomRingtoneBackground(this.cachedAudio);

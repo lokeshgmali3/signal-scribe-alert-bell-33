@@ -42,15 +42,15 @@ export const useAudioManager = () => {
       setCustomRingtone(blobUrl);
       setUseDefault(false);
 
-      // Convert to base64 and cache for background service
+      // Convert to base64 and cache for background service (synchronously, before set custom ringtone)
       try {
         const reader = new FileReader();
         reader.onloadend = async () => {
           const base64String = reader.result as string;
           const base64Data = base64String.split(',')[1];
-          
-          // Cache in background service for background playback
+          // Cache synchronously before setting in bg service to prevent race condition with ring
           await backgroundService.cacheCustomAudio(base64Data, file.type);
+          backgroundService.setCustomRingtone(blobUrl);
           console.log('🎵 Custom audio cached in background service');
         };
         reader.readAsDataURL(file);
@@ -58,10 +58,10 @@ export const useAudioManager = () => {
         console.error('🎵 Error caching custom audio:', error);
       }
 
-      // Set ringtone in background service
-      backgroundService.setCustomRingtone(blobUrl);
-      
-      console.log('🎵 Audio Manager - After selection - useDefault:', false, 'customRingtone set');
+      // Previously, setCustomRingtone was called before cacheCustomAudio finished (could allow a race).
+      // Now, we set it from inside the FileReader only after caching.
+      // backgroundService.setCustomRingtone(blobUrl);
+      // console.log('🎵 Audio Manager - After selection - useDefault:', false, 'customRingtone set');
     }
   };
 
