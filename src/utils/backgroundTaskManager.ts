@@ -1,6 +1,6 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Signal } from '@/types/signal';
-import { loadSignalsFromStorage, loadAntidelayFromStorage } from './signalStorage';
+import { loadSignalsFromStorage, loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
 import { checkSignalTime } from './signalUtils';
 import { backgroundService } from './backgroundService';
 
@@ -15,6 +15,13 @@ export const startBackgroundTask = async () => {
     if (permission.display !== 'granted') {
       console.warn('Notification permissions not granted');
       return;
+    }
+
+    // Clear any existing interval to prevent duplicates
+    if (backgroundCheckInterval) {
+      console.log('🚀 Clearing existing background task before starting new one');
+      clearInterval(backgroundCheckInterval);
+      backgroundCheckInterval = undefined;
     }
 
     console.log('Background task started - using hybrid monitoring');
@@ -42,14 +49,25 @@ const checkSignalsInBackground = async () => {
     const signals = loadSignalsFromStorage();
     const antidelaySeconds = loadAntidelayFromStorage();
     
+    if (!signals || signals.length === 0) return;
+    
+    let signalsUpdated = false;
+    
     for (const signal of signals) {
       if (checkSignalTime(signal, antidelaySeconds) && !signal.triggered) {
         await triggerLocalNotification(signal);
         
         // Mark signal as triggered and save back to storage
         signal.triggered = true;
-        console.log('Signal triggered in web background:', signal);
+        signalsUpdated = true;
+        console.log('Signal triggered in web background:', signal.timestamp);
       }
+    }
+    
+    // Save updated signals if any were triggered
+    if (signalsUpdated) {
+      console.log('🚀 Saving updated signals after web background trigger');
+      saveSignalsToStorage(signals);
     }
   } catch (error) {
     console.error('Error checking signals in background:', error);

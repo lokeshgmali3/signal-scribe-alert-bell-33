@@ -1,9 +1,8 @@
-
 import { App } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Signal } from '@/types/signal';
-import { loadSignalsFromStorage, loadAntidelayFromStorage } from './signalStorage';
+import { loadSignalsFromStorage, loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
 import { playCustomRingtoneBackground } from './audioUtils';
 
 interface CachedAudio {
@@ -18,12 +17,19 @@ class BackgroundService {
   private isAppActive = true;
   private customRingtone: string | null = null;
   private cachedAudio: CachedAudio | null = null;
+  private appStateListenerInitialized = false;
 
   async initialize() {
     try {
       console.log('🚀 Initializing background service');
       await this.requestPermissions();
-      await this.setupAppStateListeners();
+      
+      // Only set up listeners once
+      if (!this.appStateListenerInitialized) {
+        await this.setupAppStateListeners();
+        this.appStateListenerInitialized = true;
+      }
+      
       console.log('🚀 Background service initialized successfully');
     } catch (error) {
       console.error('🚀 Failed to initialize background service:', error);
@@ -103,8 +109,11 @@ class BackgroundService {
   }
 
   private startBackgroundMonitoring() {
+    // Clear any existing interval first to prevent duplicates
     if (this.backgroundCheckInterval) {
+      console.log('🚀 Clearing existing background monitor before starting new one');
       clearInterval(this.backgroundCheckInterval);
+      this.backgroundCheckInterval = null;
     }
 
     console.log('🚀 Starting background monitoring with 1-second intervals');
@@ -115,6 +124,7 @@ class BackgroundService {
 
   private stopBackgroundMonitoring() {
     if (this.backgroundCheckInterval) {
+      console.log('🚀 Stopping background monitoring');
       clearInterval(this.backgroundCheckInterval);
       this.backgroundCheckInterval = null;
       console.log('🚀 Background monitoring stopped');
@@ -126,10 +136,15 @@ class BackgroundService {
       const signals = loadSignalsFromStorage();
       const antidelaySeconds = loadAntidelayFromStorage();
       
-      if (!signals || signals.length === 0) return;
+      if (!signals || signals.length === 0) {
+        console.log('🚀 No signals found in background check');
+        return;
+      }
 
       const now = new Date();
       console.log('🚀 Background check at:', now.toLocaleTimeString(), 'for', signals.length, 'signals');
+      
+      let signalsUpdated = false;
       
       for (const signal of signals) {
         if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
@@ -137,9 +152,18 @@ class BackgroundService {
           await this.triggerBackgroundNotification(signal);
           await this.playBackgroundAudio(signal);
           
+          // Mark signal as triggered
           signal.triggered = true;
-          console.log('🚀 Signal marked as triggered in background:', signal);
+          signalsUpdated = true;
+          console.log('🚀 Signal marked as triggered in background:', signal.timestamp);
         }
+      }
+      
+      // Save updated signals back to storage if any were triggered
+      if (signalsUpdated) {
+        console.log('🚀 Saving updated signals to storage after background trigger');
+        saveSignalsToStorage(signals);
+        console.log('🚀 Updated signals saved to localStorage');
       }
     } catch (error) {
       console.error('🚀 Error checking signals in background:', error);

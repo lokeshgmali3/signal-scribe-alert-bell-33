@@ -1,9 +1,9 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Signal } from '@/types/signal';
 import { checkSignalTime } from '@/utils/signalUtils';
 import { playCustomRingtone } from '@/utils/audioUtils';
 import { requestWakeLock, releaseWakeLock } from '@/utils/wakeLockUtils';
+import { saveSignalsToStorage } from '@/utils/signalStorage';
 
 export const useRingManager = (
   savedSignals: Signal[],
@@ -70,7 +70,16 @@ export const useRingManager = (
       console.error('🔔 Error playing ringtone:', error);
     }
 
+    // Mark signal as triggered and persist to storage
+    signal.triggered = true;
     onSignalTriggered(signal);
+    
+    // Save the updated signals array to localStorage
+    console.log('🔔 Saving updated signals after foreground trigger');
+    const updatedSignals = savedSignals.map(s => 
+      s.timestamp === signal.timestamp ? { ...s, triggered: true } : s
+    );
+    saveSignalsToStorage(updatedSignals);
     
     setTimeout(() => {
       console.log('🔔 Auto-stopping ring after 10 seconds');
@@ -82,6 +91,13 @@ export const useRingManager = (
   };
 
   useEffect(() => {
+    // Clear any existing interval to prevent duplicates
+    if (intervalRef.current) {
+      console.log('🔔 Clearing existing ring manager interval');
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
     if (savedSignals.length > 0) {
       console.log('🔔 Setting up signal checking interval for', savedSignals.length, 'signals');
       
