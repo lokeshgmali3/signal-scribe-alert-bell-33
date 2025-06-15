@@ -1,8 +1,15 @@
+
 import { useEffect } from 'react';
 import { useSignalState } from './useSignalState';
 import { useRingManager } from './useRingManager';
 import { useAntidelayManager } from './useAntidelayManager';
 import { useAudioManager } from './useAudioManager';
+import { toast } from "@/hooks/use-toast";
+
+function hasNotificationPermission(): boolean {
+  if (typeof window === "undefined" || !("Notification" in window)) return false;
+  return Notification.permission === "granted";
+}
 
 export const useSignalTracker = () => {
   const {
@@ -40,14 +47,21 @@ export const useSignalTracker = () => {
     handleAntidelayCancel
   } = useAntidelayManager(savedSignals, antidelaySeconds, setAntidelaySeconds, audioManager);
 
-  // Disable all background scheduling and service worker registration
-  // Only keep possible sync on foreground (if relevant; no-op for now)
-
+  // Watch for foreground alerts fallback if notification permission denied
   useEffect(() => {
-    // No background processing.
-    // All foreground processing handled by useRingManager.
-    // Buttons and state management preserved.
-  }, [savedSignals]);
+    if (!hasNotificationPermission()) {
+      // Listen for signal triggers on foreground (user returned). Could be improved to listen to actual events
+      const handleAppForeground = () => {
+        // This is a naive example, you should trigger this toast _when_ you would send a native notification but can't
+        toast({
+          title: "⚠️ Notification Blocked",
+          description: "Cannot send background signal alert - notifications are disabled. Please enable them for best experience.",
+        });
+      };
+      window.addEventListener("signal-alert-fallback", handleAppForeground);
+      return () => window.removeEventListener("signal-alert-fallback", handleAppForeground);
+    }
+  }, []);
 
   return {
     signalsText,
