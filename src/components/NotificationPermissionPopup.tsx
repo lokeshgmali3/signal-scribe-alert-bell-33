@@ -86,20 +86,29 @@ export default function NotificationPermissionPopup() {
         <DialogHeader>
           <DialogTitle>
             {effectivePermission === "denied"
-              ? "Notifications Disabled"
+              ? "Notifications Denied"
               : "Notification Permission Needed"}
           </DialogTitle>
         </DialogHeader>
         <DialogDescription>
-          {effectivePermission === "denied" && (
-            <span>
-              <b>Notifications are denied.</b> This app cannot alert you about signals in the background.<br />
-              Please enable notifications in your browser or device settings.<br />
-              If you clicked "Block", you must reset permissions before enabling again.<br />
-              You may need to reset site permissions and restart your browser.
-            </span>
-          )}
-          {effectivePermission === "default" && (
+          {effectivePermission === "denied" ? (
+            // New message for denied state
+            <div>
+              <b>Notifications are denied.</b>
+              <br />
+              This app cannot alert you about signals in the background.<br />
+              Please enable notifications in your browser or device settings.
+              <div className="mt-3">
+                <b>Steps to enable in browser:</b>
+                <ol className="list-decimal ml-6 mt-1 text-sm">
+                  <li>Open lovable preview in new tab,</li>
+                  <li>Manually reset notification permission</li>
+                  <li>Reload site</li>
+                  <li>Allow browser's notification popup</li>
+                </ol>
+              </div>
+            </div>
+          ) : (
             <span>
               To receive signal alerts when this tab is closed or minimized, you must enable notifications.<br />
               Please grant permission below.<br />
@@ -108,78 +117,46 @@ export default function NotificationPermissionPopup() {
                   ? 'If you block notifications, Chrome will NOT prompt you again until you reset permissions manually using the instructions below.'
                   : ''}
               </span>
+              <BrowserHelp browser={browser} effectivePermission={effectivePermission} />
+              {browser === "Chrome" && effectivePermission === "denied" && (
+                <ChromeSiteSettingsHelp />
+              )}
             </span>
-          )}
-          {/* Show browser-specific help */}
-          <BrowserHelp browser={browser} effectivePermission={effectivePermission} />
-          {/* Show extra Chrome instructions if in denied and Chrome */}
-          {shouldShowChromeHelp() && (
-            <ChromeSiteSettingsHelp />
-          )}
-          {/* Additional Chrome permission reset if needed */}
-          {/* Could re-enable if you want more persistent help: <ChromePermissionReset /> */}
-          <div className="mt-2">
-            <Button
-              onClick={async () => {
-                // Always try both web/capacitor permissions no matter the status
-                let result: NotificationPermission = "default";
-                try {
-                  // Try via custom hook now (unified logic & extra debug)
-                  const reqResult = await requestPermission();
-                  setLastPermResult(reqResult as NotificationPermission);
-                  if (reqResult) {
-                    console.log("Notification.requestPermission unified result:", reqResult);
-                  }
-                } catch (err) {
-                  setLastPermResult("denied");
-                  console.error("Permission request error:", err);
-                }
-                // Always check/refresh immediately after request
-                await checkPermissions();
-              }}
-              size="sm"
-              variant="default"
-            >
-              Enable Notifications
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-2"
-              onClick={() => setShowDebug((s) => !s)}
-            >
-              {showDebug ? "Hide Debug" : "Show Debug"}
-            </Button>
-          </div>
-          {/* Troubleshooting section for stuck users */}
-          <div className="mt-4 p-2 border rounded text-xs bg-gray-50 text-gray-700">
-            <b>Troubleshooting Tips:</b>
-            <ul className="list-disc ml-5 mt-1">
-              <li>If you denied/block notifications earlier, reset permissions in your browser's site settings (<b>Site settings &gt; Notifications &gt; Reset/Allow</b>).</li>
-              <li>After resetting, reload this page and try again.</li>
-              <li>If you still can't enable, fully close and reopen all browser windows before trying again (Chrome: this step often resolves caching issues).</li>
-              <li>Try another browser or use an incognito/private window.</li>
-            </ul>
-            <span className="mt-1 block text-gray-600">
-              Still stuck? See detailed help above or ask for support.
-            </span>
-          </div>
-          {showDebug && (
-            <DebugPanel
-              browser={browser}
-              webPermission={webPermission}
-              capacitorPermission={capacitorPermission}
-              effectivePermission={effectivePermission}
-              lastPermResult={lastPermResult}
-              debug={debug}
-              checkPermissions={checkPermissions}
-              handleTestNotification={handleTestNotification}
-              testNotifStatus={testNotifStatus}
-              testNotifMessage={testNotifMessage}
-            />
           )}
         </DialogDescription>
         <DialogFooter>
+          {effectivePermission !== "denied" && (
+            <>
+              <Button
+                onClick={async () => {
+                  let result: NotificationPermission = "default";
+                  try {
+                    const reqResult = await requestPermission();
+                    setLastPermResult(reqResult as NotificationPermission);
+                    if (reqResult) {
+                      console.log("Notification.requestPermission unified result:", reqResult);
+                    }
+                  } catch (err) {
+                    setLastPermResult("denied");
+                    console.error("Permission request error:", err);
+                  }
+                  await checkPermissions();
+                }}
+                size="sm"
+                variant="default"
+              >
+                Enable Notifications
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-2"
+                onClick={() => setShowDebug((s) => !s)}
+              >
+                {showDebug ? "Hide Debug" : "Show Debug"}
+              </Button>
+            </>
+          )}
           <Button variant="ghost" size="sm" onClick={() => setShowDialog(false)}>
             Dismiss
           </Button>
