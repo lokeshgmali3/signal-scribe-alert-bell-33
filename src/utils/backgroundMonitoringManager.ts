@@ -112,6 +112,50 @@ export class BackgroundMonitoringManager {
     globalBackgroundManager.stopBackgroundMonitoring(this.instanceId);
   }
 
+  // Update ONLY specific triggered signal atomically in storage
+  private async atomicallyMarkSignalAsTriggered(signalToMark: Signal) {
+    try {
+      let attempts = 0;
+      let success = false;
+      while (attempts < 3 && !success) {
+        attempts++;
+        // Get fresh signals from storage to ensure no outdated state
+        const freshSignals = await globalBackgroundManager.withStorageLock(() =>
+          loadSignalsFromStorage()
+        );
+        const updateIdx = freshSignals.findIndex(
+          s =>
+            s.timeframe === signalToMark.timeframe &&
+            s.asset === signalToMark.asset &&
+            s.timestamp === signalToMark.timestamp &&
+            s.direction === signalToMark.direction
+        );
+        if (updateIdx >= 0 && !freshSignals[updateIdx].triggered) {
+          freshSignals[updateIdx] = { ...freshSignals[updateIdx], triggered: true };
+          try {
+            await globalBackgroundManager.withStorageLock(() =>
+              saveSignalsToStorage(freshSignals)
+            );
+            success = true;
+            console.info('[Monitor] Atomically marked triggered:', signalToMark.timestamp, '(attempt', attempts, ')');
+          } catch (err) {
+            console.warn('[Monitor] Save failed, will retry', attempts, err);
+            await new Promise(res => setTimeout(res, 30 * attempts));
+          }
+        } else {
+          // Already triggered elsewhere or signal not found
+          success = true;
+        }
+      }
+      if (!success) {
+        // Optionally, error recovery: log this signal for cleanup
+        console.error('[Monitor] Failed to atomically trigger signal after retries:', signalToMark.timestamp);
+      }
+    } catch (error) {
+      console.error('[Monitor] Atomic trigger error:', error);
+    }
+  }
+
   // IMPORTANT: Use only the cache!
   private async checkSignalsInBackground() {
     try {
@@ -122,7 +166,9 @@ export class BackgroundMonitoringManager {
       }
       const antidelaySeconds = loadAntidelayFromStorage();
       const now = new Date();
-      let signalsUpdated = false;
+
+      // Track which signals actually need to be updated
+      const signalsToTrigger: Signal[] = [];
 
       for (const signal of signals) {
         const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
@@ -133,7 +179,6 @@ export class BackgroundMonitoringManager {
             continue;
           }
 
-          // Timing logic as before; NOTE: possible place for unified/midnight fix!
           if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
             this.signalProcessingLock.add(signalKey);
             this.metrics.signalTriggers++;
@@ -142,9 +187,8 @@ export class BackgroundMonitoringManager {
             await this.notificationManager.triggerBackgroundNotification(signal);
             await this.audioManager.playBackgroundAudio(signal);
 
-            signal.triggered = true;
-            signalsUpdated = true;
-            console.log('🚀 Signal marked as triggered in background:', signal.timestamp);
+            // Add to trigger queue (so we only update what is needed)
+            signalsToTrigger.push(signal);
 
             setTimeout(() => {
               this.signalProcessingLock.delete(signalKey);
@@ -154,13 +198,12 @@ export class BackgroundMonitoringManager {
           globalSignalProcessingLock.unlockSignal(signalKey);
         }
       }
-      if (signalsUpdated) {
-        console.log('🚀 Saving updated signals to storage after background trigger');
-        // Save to storage, will auto-update cache via storage event
-        await globalBackgroundManager.withStorageLock(() =>
-          saveSignalsToStorage(signals)
-        );
-        // Explicitly fire event to refresh cache systemwide
+      // Atomically update only relevant signals, handle each independently and recover if failed
+      for (const triggeredSignal of signalsToTrigger) {
+        await this.atomicallyMarkSignalAsTriggered(triggeredSignal);
+      }
+      if (signalsToTrigger.length > 0) {
+        // Cache should refresh, but force event in case
         window.dispatchEvent(new Event('signals-storage-update'));
       }
     } catch (error) {
