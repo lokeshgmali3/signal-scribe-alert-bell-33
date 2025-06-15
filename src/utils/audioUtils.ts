@@ -1,4 +1,3 @@
-
 export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioContext[]>) => {
   console.log('🔊 Creating default beep audio');
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -84,25 +83,19 @@ export const playCustomRingtoneBackground = async (audioData: { base64: string; 
   }
 };
 
-export const playCustomRingtone = (customRingtone: string | null, audioContextsRef?: React.MutableRefObject<AudioContext[]>): Promise<HTMLAudioElement | null> => {
+export const playCustomRingtone = (
+  customRingtone: string | null,
+  audioContextsRef?: React.MutableRefObject<AudioContext[]>
+): Promise<HTMLAudioElement | null> => {
   console.log('🔊 playCustomRingtone called with:', customRingtone ? 'custom file' : 'null');
   console.log('🔊 Document visibility state:', document.visibilityState);
   console.log('🔊 Page hidden:', document.hidden);
   
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (customRingtone) {
       console.log('🔊 Playing custom ringtone:', customRingtone);
-      
-      // If page is hidden, use background-compatible method with cached audio
-      if (document.hidden) {
-        console.log('🔊 Page is hidden, requesting background audio from background service');
-        // Background service will handle this via cached audio
-        import('../utils/backgroundService').then(({ backgroundService }) => {
-          backgroundService.playBackgroundAudio().then(() => resolve(null));
-        });
-        return;
-      }
-      
+
+      // Page is always foreground in this app: skip document.hidden/background logic
       const audio = new Audio(customRingtone);
       audio.loop = false;
       audio.volume = 0.8;
