@@ -39,49 +39,6 @@ function getChromeSiteSettingsHelp() {
   );
 }
 
-// Add this utility component for an expandable troubleshooting section
-function TroubleshootingPanel() {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <div className="mt-3">
-      <button
-        className="underline text-sm text-blue-700"
-        onClick={() => setOpen((cur) => !cur)}
-      >
-        {open ? "Hide Troubleshooting" : "Troubleshooting"}
-      </button>
-      {open && (
-        <div className="mt-2 bg-slate-50 border border-slate-300 rounded p-3 text-xs text-slate-700">
-          <div>
-            <b>Typical issues &amp; fixes:</b>
-            <ul className="list-disc ml-5 mt-1 space-y-1">
-              <li>
-                <b>Blocked Prompt:</b> If you clicked <i>Block</i> or dismissed the popup, notifications are now blocked for this site.
-              </li>
-              <li>
-                <b>To Unblock:</b> Click the <b>🔒 padlock</b> (or info icon) in the address bar, choose <b>Site settings</b> &gt; <b>Notifications</b>, and set to <b>Allow</b>. Then <b>reload</b> the page.
-              </li>
-              <li>
-                <b>No “Allow” Option?</b> Click <b>Reset permissions</b>, or 
-                <span> go to your browser’s notification settings, search for this site, and remove the block to try again.</span>
-              </li>
-              <li>
-                <b>If still stuck:</b> Close all tabs/windows of this site, fully quit Chrome, relaunch, and reload.
-              </li>
-              <li>
-                Some browsers automatically suppress notification prompts if “Block” was chosen — you must <b>reset</b> permission manually, then “Allow” at the prompt.
-              </li>
-            </ul>
-            <div className="mt-2 text-[11px] text-gray-500">
-              <b>Note:</b> Notifications prompts may not appear in private/incognito mode or some preview environments.
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function NotificationPermissionPopup() {
   const {
     effectivePermission,
@@ -261,33 +218,31 @@ export default function NotificationPermissionPopup() {
           <DialogTitle>
             {effectivePermission === "denied"
               ? "Notifications Disabled"
-              : "Enable Notifications"}
+              : "Notification Permission Needed"}
           </DialogTitle>
         </DialogHeader>
         <DialogDescription>
-          <span className="block mb-2">
-            {effectivePermission === "denied" ? (
-              <>
-                <b>Notifications are currently <span className="text-red-700">blocked</span>.</b><br />
-                To receive important alerts when the app is closed or minimized, you need to allow notifications for this site.
-              </>
-            ) : (
-              <>
-                Please enable notifications so the app can alert you even if this tab is inactive or closed.
-              </>
-            )}
-            <br />
-            <b>What happens if I click <span className="font-mono">Block</span>?</b>
-            <br />
-            If you deny or dismiss the browser prompt, this site cannot show notifications. You must manually <b>reset</b> and <b>allow</b> permission in your browser's site settings to fix it.
-          </span>
+          {effectivePermission === "denied" && (
+            <span>
+              <b>Notifications are denied.</b> This app cannot alert you about signals in the background.<br />
+              Please enable notifications in your browser or device settings.<br />
+              You may need to reset site permissions and restart your browser.
+            </span>
+          )}
+          {effectivePermission === "default" && (
+            <span>
+              To receive signal alerts when this tab is closed or minimized, you must enable notifications.<br />
+              Please grant permission below.
+            </span>
+          )}
           {getBrowserHelp()}
-          <TroubleshootingPanel />
           <div className="mt-2">
             <Button
               onClick={async () => {
+                // Always try both web/capacitor permissions no matter the status
                 let result: NotificationPermission = "default";
                 try {
+                  // Try via custom hook now (unified logic & extra debug)
                   const reqResult = await requestPermission();
                   setLastPermResult(reqResult as NotificationPermission);
                   if (reqResult) {
@@ -297,12 +252,13 @@ export default function NotificationPermissionPopup() {
                   setLastPermResult("denied");
                   console.error("Permission request error:", err);
                 }
+                // Always check/refresh immediately after request
                 await checkPermissions();
               }}
               size="sm"
               variant="default"
             >
-              {effectivePermission === "default" ? "Allow Notifications" : "Retry Enable"}
+              Enable Notifications
             </Button>
             <Button
               variant="ghost"
