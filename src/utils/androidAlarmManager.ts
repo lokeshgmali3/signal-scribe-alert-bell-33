@@ -1,5 +1,4 @@
-
-import { AlarmManager } from '@capacitor-community/alarm-manager';
+// Placeholder for AlarmManager integration: native code/plugin required!
 import { Signal } from '@/types/signal';
 
 interface AlarmMap {
@@ -7,7 +6,8 @@ interface AlarmMap {
 }
 
 /**
- * Wraps scheduling and cancelling alarms for Android
+ * Stub for scheduling and cancelling alarms for Android.
+ * REAL implementation requires a custom Capacitor plugin or custom native code.
  */
 export class AndroidAlarmManager {
   static alarmPrefix = 24600;
@@ -32,29 +32,16 @@ export class AndroidAlarmManager {
 
     await this.cancelAllAlarms();
 
-    for (const alarm of alarmsToSet) {
-      try {
-        await AlarmManager.setAlarm({
-          id: alarm.alarmId,
-          triggerAtMillis: alarm.time,
-          title: 'Binary Signal Alert',
-          text: `${alarm.signal.asset || 'Asset'} - ${alarm.signal.direction || 'Direction'} at ${alarm.signal.timestamp}`,
-          extra: { signal: JSON.stringify(alarm.signal) },
-        });
-        console.log('[AlarmManager] Scheduled alarm', alarm.alarmId, alarm.signal);
-      } catch (error) {
-        console.error('[AlarmManager] Failed to schedule alarm', alarm.alarmId, error);
-      }
-    }
+    // In a web-only/JS environment, AlarmManager is NOT available.
+    // For actual device scheduling, implement a Capacitor plugin in native code.
+    console.warn('[AndroidAlarmManager] AlarmManager is not available without custom plugin.');
+    console.log('[AlarmManager] Would schedule', alarmsToSet.length, 'alarms');
+    // Fallback: Do nothing, or schedule notifications some other way as needed.
   }
 
   static async cancelAllAlarms() {
-    for (let idx = 0; idx < 100; ++idx) {
-      const id = AndroidAlarmManager.alarmPrefix + idx;
-      try {
-        await AlarmManager.cancelAlarm({ id });
-      } catch {}
-    }
+    // Fallback/stub.
+    console.warn('[AndroidAlarmManager] AlarmManager cancelAllAlarms is a no-op in this build.');
     console.log('[AlarmManager] Cancelled all alarms.');
   }
 }
