@@ -261,19 +261,19 @@ export class BackgroundMonitoringManager {
       // Track which signals should be triggered
       const signalsToTrigger: Signal[] = [];
       // ----- Expand timing window and handle boundary edge cases -----
-      signals.forEach((signal) => {
+      for (const signal of signals) {
         const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
         const acquired = globalSignalProcessingLock.lockSignal(signalKey);
-        if (!acquired) return;
+        if (!acquired) continue;
         try {
-          if (this.signalProcessingLock.has(signalKey)) return;
+          if (this.signalProcessingLock.has(signalKey)) continue;
 
           // Use new robust time check (5s tolerance, drift compensating)
           if (checkSignalTime(signal, antidelaySeconds, 5) && !signal.triggered) {
             // Additional hour-boundary and duplicate protection
             const targetTime = getSignalTargetTime(signal, antidelaySeconds);
             // If target time is in the past more than the tolerance window, skip (prevents double by late interval)
-            if (now.getTime() - targetTime.getTime() > 2 * 5000) return;
+            if (now.getTime() - targetTime.getTime() > 2 * 5000) continue;
 
             this.signalProcessingLock.add(signalKey);
             this.metrics.signalTriggers++;
@@ -299,7 +299,7 @@ export class BackgroundMonitoringManager {
         } finally {
           globalSignalProcessingLock.unlockSignal(signalKey);
         }
-      });
+      }
       // Atomically update only relevant signals, handle each independently and recover if failed
       for (const triggeredSignal of signalsToTrigger) {
         await this.processAndMarkSignal(triggeredSignal);
