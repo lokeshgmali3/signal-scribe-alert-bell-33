@@ -1,5 +1,5 @@
+
 import { useState, useEffect, useRef } from 'react';
-import { backgroundService } from '@/utils/backgroundService';
 
 export const useAudioManager = () => {
   const [customRingtone, setCustomRingtone] = useState<string | null>(null);
@@ -25,61 +25,32 @@ export const useAudioManager = () => {
         document.body.removeChild(fileInputRef.current);
       }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // do not include handleRingtoneSelect
 
-  // Sync with background service whenever the effective ringtone changes
-  useEffect(() => {
-    const effectiveRingtone = useDefault ? null : customRingtone;
-    console.log('🎵 Audio Manager - Syncing with background service:', effectiveRingtone ? 'custom' : 'default');
-    backgroundService.setCustomRingtone(effectiveRingtone);
-  }, [useDefault, customRingtone]);
+  // No background sync! Everything below is foreground only.
 
-  const handleRingtoneSelect = async (event: Event) => {
+  const handleRingtoneSelect = (event: Event) => {
     const target = event.target as HTMLInputElement;
     const file = target.files?.[0];
     
     if (file) {
       console.log('🎵 Custom ringtone selected:', file.name, 'size:', file.size, 'bytes');
-      
-      try {
-        // Convert file to base64 for persistent storage
-        const base64Audio = await fileToBase64(file);
-        console.log('🎵 Custom ringtone converted to base64, length:', base64Audio.length);
-        
-        // Store both blob URL for immediate playback and base64 for background
-        const blobUrl = URL.createObjectURL(file);
-        console.log('🎵 Created blob URL:', blobUrl);
-        
-        // Cache the audio in background service
-        await backgroundService.cacheCustomAudio(base64Audio, file.type);
-        console.log('🎵 Custom audio cached in background service');
-        
-        setCustomRingtone(blobUrl);
-        setUseDefault(false);
-        console.log('🎵 Audio Manager - After selection - useDefault:', false, 'customRingtone set');
-      } catch (error) {
-        console.error('🎵 Error processing custom ringtone:', error);
-      }
-    }
-  };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Remove the data URL prefix (e.g., "data:audio/mp3;base64,")
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+      // Store as blob URL for foreground playback only
+      const blobUrl = URL.createObjectURL(file);
+      console.log('🎵 Created blob URL:', blobUrl);
+
+      setCustomRingtone(blobUrl);
+      setUseDefault(false);
+      console.log('🎵 Audio Manager - After selection - useDefault:', false, 'customRingtone set');
+    }
   };
 
   const triggerRingtoneSelection = () => {
     console.log('🎵 Triggering ringtone selection dialog');
     if (fileInputRef.current) {
+      fileInputRef.current.value = ''; // allow re-upload of same file
       fileInputRef.current.click();
     }
   };
@@ -88,7 +59,6 @@ export const useAudioManager = () => {
     console.log('🎵 Setting to use default sound');
     setUseDefault(true);
     setCustomRingtone(null);
-    backgroundService.clearCustomAudio();
     console.log('🎵 Audio Manager - After default selection - useDefault:', true, 'customRingtone:', null);
   };
 
@@ -102,3 +72,4 @@ export const useAudioManager = () => {
     setUseDefaultSound
   };
 };
+
