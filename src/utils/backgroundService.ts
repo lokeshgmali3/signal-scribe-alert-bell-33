@@ -4,6 +4,7 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
 import { playCustomRingtoneBackground } from './audioUtils';
+import { globalBackgroundManager } from './globalBackgroundManager';
 
 interface CachedAudio {
   base64: string;
@@ -13,16 +14,21 @@ interface CachedAudio {
 
 class BackgroundService {
   private static instance: BackgroundService | null = null;
+  private instanceId: string;
   private notificationIds: number[] = [];
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
   private isAppActive = true;
   private customRingtone: string | null = null;
   private cachedAudio: CachedAudio | null = null;
   private appStateListenerInitialized = false;
-  private isBackgroundMonitoringActive = false;
   private signalProcessingLock = new Set<string>();
+  private listenerCleanupFunctions: (() => void)[] = [];
 
-  // Singleton pattern to prevent multiple instances
+  constructor() {
+    this.instanceId = globalBackgroundManager.generateInstanceId();
+    console.log('🚀 Background service instance created with ID:', this.instanceId);
+  }
+
   static getInstance(): BackgroundService {
     if (!BackgroundService.instance) {
       BackgroundService.instance = new BackgroundService();
@@ -32,10 +38,9 @@ class BackgroundService {
 
   async initialize() {
     try {
-      console.log('🚀 Initializing background service');
+      console.log('🚀 Initializing background service instance:', this.instanceId);
       await this.requestPermissions();
       
-      // Only set up listeners once per instance
       if (!this.appStateListenerInitialized) {
         await this.setupAppStateListeners();
         this.appStateListenerInitialized = true;
@@ -96,18 +101,17 @@ class BackgroundService {
   }
 
   private async setupAppStateListeners() {
-    console.log('🚀 Setting up app state listeners');
+    console.log('🚀 Setting up app state listeners for instance:', this.instanceId);
     
-    // Remove any existing listeners first
-    App.removeAllListeners();
-    LocalNotifications.removeAllListeners();
+    // Clean up any existing listeners first
+    this.cleanupListeners();
     
-    App.addListener('appStateChange', ({ isActive }) => {
-      console.log('🚀 App state changed. Active:', isActive);
+    const appStateListener = App.addListener('appStateChange', ({ isActive }) => {
+      console.log('🚀 App state changed. Active:', isActive, 'Instance:', this.instanceId);
       this.isAppActive = isActive;
       
       if (!isActive) {
-        console.log('🚀 App moved to background - starting monitoring');
+        console.log('🚀 App moved to background - attempting to start monitoring');
         this.startBackgroundMonitoring();
       } else {
         console.log('🚀 App came to foreground - stopping monitoring');
@@ -115,30 +119,40 @@ class BackgroundService {
       }
     });
 
-    LocalNotifications.addListener('localNotificationActionPerformed', 
+    const notificationListener = LocalNotifications.addListener('localNotificationActionPerformed', 
       async (notification) => {
         console.log('🚀 Notification action performed:', notification);
         await this.triggerHapticFeedback();
       }
     );
+
+    this.listenerCleanupFunctions.push(
+      () => appStateListener.remove(),
+      () => notificationListener.remove()
+    );
+
+    globalBackgroundManager.addListener();
+    globalBackgroundManager.addListener(); // One for each listener
+  }
+
+  private cleanupListeners() {
+    console.log('🚀 Cleaning up existing listeners for instance:', this.instanceId);
+    this.listenerCleanupFunctions.forEach(cleanup => cleanup());
+    this.listenerCleanupFunctions = [];
   }
 
   private startBackgroundMonitoring() {
-    // Prevent multiple instances
-    if (this.isBackgroundMonitoringActive) {
-      console.log('🚀 Background monitoring already active, skipping start');
+    if (!globalBackgroundManager.canStartBackgroundMonitoring(this.instanceId)) {
+      console.log('🚀 Background monitoring blocked by global manager');
       return;
     }
 
-    // Clear any existing interval first
     if (this.backgroundCheckInterval) {
-      console.log('🚀 Clearing existing background monitor before starting new one');
-      clearInterval(this.backgroundCheckInterval);
-      this.backgroundCheckInterval = null;
+      console.log('🚀 Background monitoring already active for this instance');
+      return;
     }
 
-    this.isBackgroundMonitoringActive = true;
-    console.log('🚀 Starting background monitoring with 1-second intervals');
+    console.log('🚀 Starting background monitoring for instance:', this.instanceId);
     this.backgroundCheckInterval = setInterval(async () => {
       await this.checkSignalsInBackground();
     }, 1000);
@@ -146,16 +160,18 @@ class BackgroundService {
 
   private stopBackgroundMonitoring() {
     if (this.backgroundCheckInterval) {
-      console.log('🚀 Stopping background monitoring');
+      console.log('🚀 Stopping background monitoring for instance:', this.instanceId);
       clearInterval(this.backgroundCheckInterval);
       this.backgroundCheckInterval = null;
     }
-    this.isBackgroundMonitoringActive = false;
+    globalBackgroundManager.stopBackgroundMonitoring(this.instanceId);
   }
 
   private async checkSignalsInBackground() {
     try {
-      const signals = loadSignalsFromStorage();
+      const signals = await globalBackgroundManager.withStorageLock(() => 
+        loadSignalsFromStorage()
+      );
       const antidelaySeconds = loadAntidelayFromStorage();
       
       if (!signals || signals.length === 0) {
@@ -168,35 +184,32 @@ class BackgroundService {
       for (const signal of signals) {
         const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
         
-        // Check if already processing this signal
         if (this.signalProcessingLock.has(signalKey)) {
           continue;
         }
         
         if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
-          // Lock this signal for processing
           this.signalProcessingLock.add(signalKey);
           
           console.log('🚀 Signal should trigger in background:', signal);
           await this.triggerBackgroundNotification(signal);
           await this.playBackgroundAudio(signal);
           
-          // Mark signal as triggered
           signal.triggered = true;
           signalsUpdated = true;
           console.log('🚀 Signal marked as triggered in background:', signal.timestamp);
           
-          // Release lock after processing
           setTimeout(() => {
             this.signalProcessingLock.delete(signalKey);
           }, 2000);
         }
       }
       
-      // Save updated signals back to storage if any were triggered
       if (signalsUpdated) {
         console.log('🚀 Saving updated signals to storage after background trigger');
-        saveSignalsToStorage(signals);
+        await globalBackgroundManager.withStorageLock(() => 
+          saveSignalsToStorage(signals)
+        );
       }
     } catch (error) {
       console.error('🚀 Error checking signals in background:', error);
@@ -337,20 +350,26 @@ class BackgroundService {
       await this.cancelAllScheduledNotifications();
       this.clearCustomAudio();
       this.signalProcessingLock.clear();
-      App.removeAllListeners();
-      LocalNotifications.removeAllListeners();
-      console.log('🚀 Background service cleaned up');
+      this.cleanupListeners();
+      
+      // Remove listeners from global count
+      globalBackgroundManager.removeListener();
+      globalBackgroundManager.removeListener();
+      
+      console.log('🚀 Background service cleaned up for instance:', this.instanceId);
     } catch (error) {
       console.error('🚀 Error cleaning up background service:', error);
     }
   }
 
   getStatus() {
+    const globalStatus = globalBackgroundManager.getStatus();
     return {
-      isBackgroundMonitoringActive: this.isBackgroundMonitoringActive,
+      instanceId: this.instanceId,
       hasBackgroundInterval: !!this.backgroundCheckInterval,
       isAppActive: this.isAppActive,
-      processingSignals: Array.from(this.signalProcessingLock)
+      processingSignals: Array.from(this.signalProcessingLock),
+      globalStatus
     };
   }
 }

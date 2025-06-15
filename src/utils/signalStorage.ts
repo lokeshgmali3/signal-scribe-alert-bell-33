@@ -1,13 +1,16 @@
 
 import { Signal } from '@/types/signal';
+import { globalBackgroundManager } from './globalBackgroundManager';
 
 const SIGNALS_STORAGE_KEY = 'binary_signals';
 const ANTIDELAY_STORAGE_KEY = 'antidelay_seconds';
 
-export const saveSignalsToStorage = (signals: Signal[]) => {
+export const saveSignalsToStorage = async (signals: Signal[]) => {
   try {
-    localStorage.setItem(SIGNALS_STORAGE_KEY, JSON.stringify(signals));
-    console.log('Signals saved to localStorage:', signals);
+    await globalBackgroundManager.withStorageLock(() => {
+      localStorage.setItem(SIGNALS_STORAGE_KEY, JSON.stringify(signals));
+      console.log('Signals saved to localStorage:', signals);
+    });
   } catch (error) {
     console.error('Failed to save signals to localStorage:', error);
   }
