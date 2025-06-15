@@ -1,9 +1,27 @@
+
 import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
 import { globalBackgroundManager } from './globalBackgroundManager';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
 import { BackgroundAudioManager } from './backgroundAudioManager';
 import { globalSignalProcessingLock } from './globalSignalProcessingLock';
+
+interface SignalProcessingResult {
+  signalKey: string;
+  success: boolean;
+  reason: string;
+  targetTime: Date;
+  currentTime: Date;
+  timeDiff: number;
+}
+
+interface SignalDetectionStatus {
+  signalKey: string;
+  lastChecked: Date;
+  status: 'pending' | 'triggered' | 'missed' | 'error';
+  attempts: number;
+  lastError?: string;
+}
 
 export class BackgroundMonitoringManager {
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
@@ -20,8 +38,15 @@ export class BackgroundMonitoringManager {
     cacheHits: 0,
     cacheInvalidations: 0,
     signalTriggers: 0,
+    processingErrors: 0,
+    signalsProcessed: 0,
   };
   private signalsListenerRegistered: boolean = false;
+
+  // === SIGNAL STATE MANAGEMENT ===
+  private signalDetectionStatus = new Map<string, SignalDetectionStatus>();
+  private processingResults: SignalProcessingResult[] = [];
+  private atomicUpdateLock = false;
 
   constructor(
     instanceId: string,
@@ -39,13 +64,29 @@ export class BackgroundMonitoringManager {
     this.cachedSignals = loadSignalsFromStorage();
     this.cacheVersion++;
     this.metrics.storageLoads++;
+    this.initializeSignalDetectionStatus();
     console.info('[Monitor] Signals loaded into cache. (Loads:', this.metrics.storageLoads, 'Version:', this.cacheVersion, ')', this.cachedSignals);
+  }
+
+  private initializeSignalDetectionStatus() {
+    this.signalDetectionStatus.clear();
+    this.cachedSignals.forEach(signal => {
+      const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
+      this.signalDetectionStatus.set(signalKey, {
+        signalKey,
+        lastChecked: new Date(),
+        status: signal.triggered ? 'triggered' : 'pending',
+        attempts: 0
+      });
+    });
+    console.info('[Monitor] Signal detection status initialized for', this.signalDetectionStatus.size, 'signals');
   }
 
   private updateCache(newSignals: Signal[]) {
     this.cachedSignals = Array.isArray(newSignals) ? [...newSignals] : [];
     this.cacheVersion++;
     this.metrics.cacheInvalidations++;
+    this.initializeSignalDetectionStatus();
     console.info(`[Monitor] Signal cache updated (ver ${this.cacheVersion}, invalidations: ${this.metrics.cacheInvalidations})`, this.cachedSignals);
   }
 
@@ -62,7 +103,6 @@ export class BackgroundMonitoringManager {
     }
   }
 
-  // Listener to keep cache current when storage changes
   private handleSignalsUpdate = () => {
     this.metrics.storageLoads++;
     const updatedSignals = loadSignalsFromStorage();
@@ -70,10 +110,10 @@ export class BackgroundMonitoringManager {
     console.info('[Monitor] Cache reloaded after storage update (Loads:', this.metrics.storageLoads, ')');
   };
 
-  // Public: May be called on app cleanup
   cleanup() {
     this.stopBackgroundMonitoring();
     this.signalProcessingLock.clear();
+    this.signalDetectionStatus.clear();
     this.unregisterSignalsListener();
   }
 
@@ -86,10 +126,10 @@ export class BackgroundMonitoringManager {
       console.log('🚀 Background monitoring already active for this instance:', this.instanceId);
       return;
     }
-    // Initial cache load always
+    
     this.initCache();
-
     console.log('🚀 Starting background monitoring for instance:', this.instanceId);
+    
     this.backgroundCheckInterval = setInterval(async () => {
       if (globalBackgroundManager.getStatus().activeInstanceId !== this.instanceId) {
         console.warn(
@@ -98,7 +138,6 @@ export class BackgroundMonitoringManager {
         this.stopBackgroundMonitoring();
         return;
       }
-      // Use only cached signals!
       await this.checkSignalsInBackground();
     }, 1000);
   }
@@ -112,7 +151,6 @@ export class BackgroundMonitoringManager {
     globalBackgroundManager.stopBackgroundMonitoring(this.instanceId);
   }
 
-  // IMPORTANT: Use only the cache!
   private async checkSignalsInBackground() {
     try {
       this.metrics.cacheHits++;
@@ -120,65 +158,206 @@ export class BackgroundMonitoringManager {
       if (!signals || signals.length === 0) {
         return;
       }
+
       const antidelaySeconds = loadAntidelayFromStorage();
       const now = new Date();
-      let signalsUpdated = false;
+      const processedSignals: Signal[] = [];
+      const processingResults: SignalProcessingResult[] = [];
+
+      console.debug(`[Monitor Debug] Checking ${signals.length} signals at ${now.toISOString()}`);
 
       for (const signal of signals) {
-        const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
-        const acquired = globalSignalProcessingLock.lockSignal(signalKey);
-        if (!acquired) continue;
-        try {
-          if (this.signalProcessingLock.has(signalKey)) {
-            continue;
-          }
-
-          // Timing logic as before; NOTE: possible place for unified/midnight fix!
-          if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
-            this.signalProcessingLock.add(signalKey);
-            this.metrics.signalTriggers++;
-            console.log('🚀 Signal should trigger in background:', signal);
-
-            await this.notificationManager.triggerBackgroundNotification(signal);
-            await this.audioManager.playBackgroundAudio(signal);
-
-            signal.triggered = true;
-            signalsUpdated = true;
-            console.log('🚀 Signal marked as triggered in background:', signal.timestamp);
-
-            setTimeout(() => {
-              this.signalProcessingLock.delete(signalKey);
-            }, 2000);
-          }
-        } finally {
-          globalSignalProcessingLock.unlockSignal(signalKey);
+        const result = await this.processSignalIndependently(signal, antidelaySeconds, now);
+        processingResults.push(result);
+        
+        if (result.success) {
+          processedSignals.push(signal);
         }
       }
-      if (signalsUpdated) {
-        console.log('🚀 Saving updated signals to storage after background trigger');
-        // Save to storage, will auto-update cache via storage event
-        await globalBackgroundManager.withStorageLock(() =>
-          saveSignalsToStorage(signals)
-        );
-        // Explicitly fire event to refresh cache systemwide
-        window.dispatchEvent(new Event('signals-storage-update'));
+
+      // Atomic update of signals if any were processed
+      if (processedSignals.length > 0) {
+        await this.atomicSignalUpdate(signals);
       }
+
+      // Log comprehensive debugging info
+      this.logProcessingResults(processingResults, now);
+      
     } catch (error) {
+      this.metrics.processingErrors++;
       console.error('🚀 Error checking signals in background:', error);
     }
   }
 
-  private shouldTriggerSignal(signal: Signal, antidelaySeconds: number, now: Date): boolean {
-    if (signal.triggered) return false;
+  private async processSignalIndependently(signal: Signal, antidelaySeconds: number, now: Date): Promise<SignalProcessingResult> {
+    const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
+    
+    try {
+      this.metrics.signalsProcessed++;
+      
+      // Get detection status
+      const detectionStatus = this.signalDetectionStatus.get(signalKey);
+      if (detectionStatus) {
+        detectionStatus.lastChecked = now;
+        detectionStatus.attempts++;
+      }
 
-    const [signalHours, signalMinutes] = signal.timestamp.split(':').map(Number);
-    const signalDate = new Date();
-    signalDate.setHours(signalHours, signalMinutes, 0, 0);
+      // Calculate target time with debugging
+      const [signalHours, signalMinutes] = signal.timestamp.split(':').map(Number);
+      const signalDate = new Date();
+      signalDate.setHours(signalHours, signalMinutes, 0, 0);
+      const targetTime = new Date(signalDate.getTime() - (antidelaySeconds * 1000));
+      const timeDiff = Math.abs(now.getTime() - targetTime.getTime());
 
-    const targetTime = new Date(signalDate.getTime() - (antidelaySeconds * 1000));
-    const timeDiff = Math.abs(now.getTime() - targetTime.getTime());
+      const result: SignalProcessingResult = {
+        signalKey,
+        success: false,
+        reason: '',
+        targetTime,
+        currentTime: now,
+        timeDiff
+      };
 
-    return timeDiff < 1000;
+      // Check if already triggered
+      if (signal.triggered) {
+        result.reason = 'Already triggered';
+        if (detectionStatus) detectionStatus.status = 'triggered';
+        return result;
+      }
+
+      // Try to acquire global lock
+      const acquired = globalSignalProcessingLock.lockSignal(signalKey);
+      if (!acquired) {
+        result.reason = 'Global lock unavailable';
+        return result;
+      }
+
+      try {
+        // Check if already being processed by this instance
+        if (this.signalProcessingLock.has(signalKey)) {
+          result.reason = 'Already processing in this instance';
+          return result;
+        }
+
+        // Check timing with extended tolerance (3 seconds)
+        if (timeDiff > 3000) {
+          result.reason = `Outside time window (${timeDiff}ms > 3000ms)`;
+          return result;
+        }
+
+        // Signal should trigger
+        this.signalProcessingLock.add(signalKey);
+        this.metrics.signalTriggers++;
+        
+        console.log('🚀 Signal should trigger in background:', signal);
+        console.debug(`[Signal Debug] ${signalKey}: Target=${targetTime.toISOString()}, Current=${now.toISOString()}, Diff=${timeDiff}ms`);
+
+        // Trigger notifications and audio
+        await this.notificationManager.triggerBackgroundNotification(signal);
+        await this.audioManager.playBackgroundAudio(signal);
+
+        // Mark as triggered
+        signal.triggered = true;
+        if (detectionStatus) detectionStatus.status = 'triggered';
+        
+        result.success = true;
+        result.reason = 'Successfully triggered';
+        
+        console.log('🚀 Signal marked as triggered in background:', signal.timestamp);
+
+        // Clean up processing lock after delay
+        setTimeout(() => {
+          this.signalProcessingLock.delete(signalKey);
+        }, 2000);
+
+      } finally {
+        globalSignalProcessingLock.unlockSignal(signalKey);
+      }
+
+      return result;
+
+    } catch (error) {
+      this.metrics.processingErrors++;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Update detection status with error
+      const detectionStatus = this.signalDetectionStatus.get(signalKey);
+      if (detectionStatus) {
+        detectionStatus.status = 'error';
+        detectionStatus.lastError = errorMessage;
+      }
+      
+      console.error(`🚀 Error processing signal ${signalKey}:`, error);
+      
+      return {
+        signalKey,
+        success: false,
+        reason: `Error: ${errorMessage}`,
+        targetTime: new Date(),
+        currentTime: now,
+        timeDiff: 0
+      };
+    }
+  }
+
+  private async atomicSignalUpdate(signals: Signal[]): Promise<void> {
+    // Prevent concurrent updates
+    while (this.atomicUpdateLock) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    
+    this.atomicUpdateLock = true;
+    try {
+      console.log('🚀 Saving updated signals to storage after background trigger');
+      await globalBackgroundManager.withStorageLock(() =>
+        saveSignalsToStorage(signals)
+      );
+      window.dispatchEvent(new Event('signals-storage-update'));
+    } finally {
+      this.atomicUpdateLock = false;
+    }
+  }
+
+  private logProcessingResults(results: SignalProcessingResult[], checkTime: Date) {
+    const triggeredCount = results.filter(r => r.success).length;
+    const pendingCount = results.filter(r => !r.success && r.reason !== 'Already triggered').length;
+    
+    if (triggeredCount > 0 || pendingCount > 0) {
+      console.group(`[Monitor Results] ${checkTime.toLocaleTimeString()} - Triggered: ${triggeredCount}, Pending: ${pendingCount}`);
+      
+      results.forEach(result => {
+        const timeDiffSeconds = (result.timeDiff / 1000).toFixed(1);
+        const status = result.success ? '✅' : result.reason === 'Already triggered' ? '⏭️' : '⏳';
+        
+        console.log(`${status} ${result.signalKey}: ${result.reason} (${timeDiffSeconds}s diff)`);
+        
+        if (!result.success && result.reason !== 'Already triggered') {
+          console.debug(`   Target: ${result.targetTime.toLocaleTimeString()}, Current: ${result.currentTime.toLocaleTimeString()}`);
+        }
+      });
+      
+      console.groupEnd();
+    }
+
+    // Log detection status summary every 30 seconds
+    if (checkTime.getSeconds() % 30 === 0) {
+      this.logDetectionStatusSummary();
+    }
+  }
+
+  private logDetectionStatusSummary() {
+    const statusCounts = {
+      pending: 0,
+      triggered: 0,
+      missed: 0,
+      error: 0
+    };
+
+    this.signalDetectionStatus.forEach(status => {
+      statusCounts[status.status]++;
+    });
+
+    console.info('[Detection Summary]', statusCounts, 'Total metrics:', this.metrics);
   }
 
   isActive(): boolean {
@@ -189,8 +368,16 @@ export class BackgroundMonitoringManager {
     return Array.from(this.signalProcessingLock);
   }
 
-  // PERF
   getMetrics() {
-    return { ...this.metrics, cacheVersion: this.cacheVersion };
+    return { 
+      ...this.metrics, 
+      cacheVersion: this.cacheVersion,
+      detectionStatusCount: this.signalDetectionStatus.size,
+      processingResultsCount: this.processingResults.length
+    };
+  }
+
+  getDetectionStatus(): Map<string, SignalDetectionStatus> {
+    return new Map(this.signalDetectionStatus);
   }
 }
