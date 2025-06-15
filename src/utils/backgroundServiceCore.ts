@@ -1,3 +1,4 @@
+
 import { App } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Signal } from '@/types/signal';
@@ -28,65 +29,22 @@ export class BackgroundServiceCore {
       this.notificationManager,
       this.audioManager
     );
-    // --- Android-specific Phase 2 scaffolding ---
-    this.prepareAndroidBackgroundFeatures();
   }
-
-  /**
-   * Scaffold for Android-specific features (battery, foreground notification, alarm manager)
-   */
-  private prepareAndroidBackgroundFeatures() {
-    // TODO: Request battery optimization bypass (requires plugin/native-side logic)
-    // this.requestIgnoreBatteryOptimizations();
-
-    // TODO: Create a persistent foreground service notification to keep the app alive
-    // this.startForegroundServiceNotification();
-
-    // TODO: Schedule alarms for background using AlarmManager (requires plugin/native/native-side logic)
-    // this.scheduleAlarmManagerSignals();
-  }
-
-  // ---- Begin: Android-specific stubs for future implementation ----
-
-  /**
-   * Stub: Request the OS to ignore battery optimizations for this app/package.
-   * Needs native code or a dedicated plugin (not available in web-only context).
-   */
-  public async requestIgnoreBatteryOptimizations() {
-    // TODO: Implement using e.g. @capacitor-community/battery-optimization or custom native/Cordova plugin
-    console.warn('[Android Scaffold] Battery optimization bypass is not implemented yet.');
-    // Could trigger an Intent: `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
-  }
-
-  /**
-   * Stub: Start a foreground notification/service to keep the app alive in background on Android.
-   * This can be accomplished only with native plugins or custom Java/Kotlin code.
-   */
-  public async startForegroundServiceNotification() {
-    // TODO: Use native plugin (e.g. capacitor-foreground-service, or write Cordova plugin)
-    // This notification should be persistent and ongoing, ideally allow user to stop monitoring
-    console.warn('[Android Scaffold] Foreground service notification not implemented yet.');
-  }
-
-  /**
-   * Stub: Schedule tasks using Android's AlarmManager for reliable background execution.
-   */
-  public async scheduleAlarmManagerSignals(signals?: Signal[]) {
-    // TODO: Use e.g. @capacitor-community/alarm-manager once supported or custom native plugin
-    // Call to schedule alarms for each signal (intent-based broadcast to wake app)
-    console.warn('[Android Scaffold] AlarmManager-based scheduling not implemented yet.');
-  }
-
-  // ---- End: Android-specific stubs ----
 
   async initialize() {
-    console.log('🚀 Initializing background service instance:', this.instanceId);
-    await this.notificationManager.requestPermissions();
-    if (!this.appStateListenerInitialized) {
-      await this.setupAppStateListeners();
-      this.appStateListenerInitialized = true;
+    try {
+      console.log('🚀 Initializing background service instance:', this.instanceId);
+      await this.notificationManager.requestPermissions();
+      
+      if (!this.appStateListenerInitialized) {
+        await this.setupAppStateListeners();
+        this.appStateListenerInitialized = true;
+      }
+      
+      console.log('🚀 Background service initialized successfully');
+    } catch (error) {
+      console.error('🚀 Failed to initialize background service:', error);
     }
-    console.log('🚀 Background service initialized successfully');
   }
 
   // Audio methods
