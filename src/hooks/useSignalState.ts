@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Signal } from '@/types/signal';
 import { parseSignals } from '@/utils/signalUtils';
@@ -8,7 +7,6 @@ import {
   saveAntidelayToStorage, 
   loadAntidelayFromStorage 
 } from '@/utils/signalStorage';
-import { scheduleAllSignalNotifications } from '@/utils/backgroundTaskManager';
 
 export const useSignalState = () => {
   const [signalsText, setSignalsText] = useState('');
@@ -43,11 +41,6 @@ export const useSignalState = () => {
     const signals = parseSignals(signalsText);
     setSavedSignals(signals);
     saveSignalsToStorage(signals);
-    
-    // Schedule notifications for the new signals
-    if (signals.length > 0) {
-      scheduleAllSignalNotifications(signals);
-    }
   };
 
   const updateSignalTriggered = (signal: Signal) => {
