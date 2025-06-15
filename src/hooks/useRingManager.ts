@@ -22,42 +22,34 @@ export const useRingManager = (
   const audioInstancesRef = useRef<HTMLAudioElement[]>([]);
   const audioContextsRef = useRef<AudioContext[]>([]);
 
-  // Only run interval if tab is visible
+  // Always run interval, background/foreground: Remove restriction that prevents background ringing
   useEffect(() => {
-    const handleVisibility = () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      if (
-        document.visibilityState === 'visible' &&
-        savedSignals.length > 0
-      ) {
-        intervalRef.current = setInterval(() => {
-          const now = new Date();
-          savedSignals.forEach(signal => {
-            if (checkSignalTime(signal, antidelaySeconds) && !signal.triggered) {
-              const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
-              if (!triggeredSignals.has(signalKey)) {
-                triggerRing(signal, customRingtone);
-              }
-            }
-          });
-        }, 1000);
-      }
+    const checkAndTriggerSignals = () => {
+      savedSignals.forEach(signal => {
+        if (checkSignalTime(signal, antidelaySeconds) && !signal.triggered) {
+          const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
+          if (!triggeredSignals.has(signalKey)) {
+            triggerRing(signal, customRingtone);
+          }
+        }
+      });
     };
 
-    document.addEventListener('visibilitychange', handleVisibility);
-    // run initially in case already not visible
-    handleVisibility();
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (savedSignals.length > 0) {
+      intervalRef.current = setInterval(checkAndTriggerSignals, 1000);
+    }
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     };
+    // Only re-run if savedSignals/customRingtone/antidelaySeconds/triggeredSignals change
   }, [savedSignals, customRingtone, antidelaySeconds, triggeredSignals]);
 
   // Reset triggered signals if the savedSignals array changes
@@ -72,10 +64,7 @@ export const useRingManager = (
       return;
     }
 
-    // Only allow ringing if app is visible
-    if (document.visibilityState !== "visible") {
-      return;
-    }
+    // REMOVED: document.visibilityState check that previously limited ringing to foreground only
 
     setTriggeredSignals(prev => new Set(prev).add(signalKey));
     setIsRinging(true);

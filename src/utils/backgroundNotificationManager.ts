@@ -1,16 +1,48 @@
 
+
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Signal } from '@/types/signal';
 
+// --- Android Background Requirements Scaffold ---
+// These need to be implemented step by step in future phases
+const ANDROID_CHANNEL_ID = 'signal_alerts_channel';
+
+// TODO: Implement requesting battery optimization bypass (needs custom plugin or manual intent trigger)
+// TODO: Implement persistent/foreground notification for Android background service (needs native code or plugin)
+// TODO: Schedule alarms for background using AlarmManager (needs @capacitor-community/alarm-manager or custom)
+// TODO: Set up notification channel for ringing alarms (needed for background wake+ring)
+
 export class BackgroundNotificationManager {
   private notificationIds: number[] = [];
+
+  /**
+   * Ensure notification channel is created for Android, with high importance, sound, and vibration.
+   * For now, this is a stub -- implement with Capacitor Notification Channel APIs later.
+   */
+  async createAndroidNotificationChannel() {
+    // TODO: Use LocalNotifications.createChannel when Capacitor supports it, or use Cordova plugin/polyfill
+    // Example:
+    // await LocalNotifications.createChannel({
+    //   id: ANDROID_CHANNEL_ID,
+    //   name: 'Signal Alerts',
+    //   description: 'Channel for binary signal alert notifications',
+    //   importance: 5, // max
+    //   visibility: 1, // public
+    //   sound: 'beep.wav', // use actual bundled sound
+    //   vibration: true,
+    // });
+  }
 
   async requestPermissions() {
     try {
       console.log('🚀 Requesting permissions');
       const notificationPermission = await LocalNotifications.requestPermissions();
       console.log('🚀 Notification permission status:', notificationPermission);
+
+      // Attempt to create channel early if on Android (doesn't error if doesn't exist)
+      await this.createAndroidNotificationChannel();
+
       return notificationPermission;
     } catch (error) {
       console.error('🚀 Error requesting permissions:', error);
@@ -25,6 +57,7 @@ export class BackgroundNotificationManager {
 
       console.log('🚀 Scheduling background notification for signal:', signal);
 
+      // Show notification with alert sound/vibration and high importance/channel if possible
       await LocalNotifications.schedule({
         notifications: [
           {
@@ -32,17 +65,21 @@ export class BackgroundNotificationManager {
             body: `${signal.asset || 'Asset'} - ${signal.direction || 'Direction'} at ${signal.timestamp}`,
             id: notificationId,
             schedule: { at: new Date() },
-            sound: 'default',
+            sound: 'default', // You can use custom or 'beep.wav' if available
             attachments: undefined,
             actionTypeId: 'SIGNAL_ALERT',
             extra: {
               signal: JSON.stringify(signal),
               timestamp: Date.now()
-            }
+            },
+            // channelId: ANDROID_CHANNEL_ID, // Uncomment when channel supported
+            // Renotify, persistent, vibration, etc -- future implementation as needed
+            // vibrate: [400, 200, 400, 200, 400], // for Cordova
           }
         ]
       });
 
+      // Basic Android wake/vibrate, escalate this pattern/length in future
       await this.triggerHapticFeedback();
       console.log('🚀 Background notification scheduled successfully');
     } catch (error) {
@@ -100,7 +137,10 @@ export class BackgroundNotificationManager {
               actionTypeId: 'SIGNAL_ALERT',
               extra: {
                 signal: JSON.stringify(signal)
-              }
+              },
+              // channelId: ANDROID_CHANNEL_ID,
+              // Renotify, persistent, etc.
+              // vibrate: [400, 200, 400, 200],
             };
           }
           return null;
@@ -136,3 +176,4 @@ export class BackgroundNotificationManager {
     return [...this.notificationIds];
   }
 }
+
