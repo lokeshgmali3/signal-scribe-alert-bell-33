@@ -1,4 +1,3 @@
-
 import { App } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Signal } from '@/types/signal';
@@ -55,15 +54,12 @@ export class BackgroundServiceCore {
     try {
       console.log('🚀 Initializing background service instance:', this.instanceId);
       
-      // Check if we're on native Android
       if (nativeAndroidManager.isAndroidNative()) {
         console.log('🤖 Native Android detected, using native features');
         
-        // Request permissions and setup
         await nativeAndroidManager.requestBatteryOptimization();
         await nativeAndroidManager.startForegroundService();
         
-        // Check permissions
         const permissions = await nativeAndroidManager.checkNativePermissions();
         if (permissions) {
           console.log('🤖 Native permissions status:', permissions);
@@ -71,7 +67,6 @@ export class BackgroundServiceCore {
       } else {
         console.log('🌐 Web platform detected, using web features');
         
-        // Don't request notification permissions if audio-only
         if (!this.audioOnlyMode) {
           await this.notificationManager.requestPermissions();
         }
@@ -81,7 +76,6 @@ export class BackgroundServiceCore {
           this.appStateListenerInitialized = true;
         }
         
-        // Android-specific: Foreground Service & AlarmManager enhancements
         if (this.isAndroidPlatform()) {
           await this.startForegroundServiceNotification();
           await this.requestBatteryOptimizationBypass();
@@ -90,8 +84,6 @@ export class BackgroundServiceCore {
 
       this.monitoringManager.setAudioOnlyMode(this.audioOnlyMode);
       this.monitoringManager.startBackgroundMonitoring();
-
-      this.debugBackgroundStatus();
       
       console.log('🚀 Background service initialized successfully');
     } catch (error) {
@@ -220,7 +212,6 @@ export class BackgroundServiceCore {
       this.audioManager.clearCustomAudio();
       this.cleanupListeners();
       
-      // Remove listeners from global count
       globalBackgroundManager.removeListener();
       globalBackgroundManager.removeListener();
       
@@ -266,18 +257,22 @@ export class BackgroundServiceCore {
       audio: this.audioManager.getAudioInfo(),
       notifIDs: this.notificationManager.getNotificationIds(),
       bgMonitorActive: this.monitoringManager.isActive(),
-      // Extra debugging possible (add more fields as needed)
       globalStatus: globalBackgroundManager.getStatus()
     };
     console.log('[DEBUG STATUS] Background service:', status);
-    // For testing: Could expose as window.bgServiceDebug = status;
     (window as any).bgServiceDebug = status;
     return status;
   }
 
   getStatus() {
-    // Use debugBackgroundStatus as the status getter
-    return this.debugBackgroundStatus();
+    return {
+      instanceId: this.instanceId,
+      appActive: this.isAppActive,
+      audio: this.audioManager.getAudioInfo(),
+      notifIDs: this.notificationManager.getNotificationIds(),
+      bgMonitorActive: this.monitoringManager.isActive(),
+      globalStatus: globalBackgroundManager.getStatus()
+    };
   }
 
   isAndroidPlatform() {
