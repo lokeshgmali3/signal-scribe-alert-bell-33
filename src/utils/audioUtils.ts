@@ -1,6 +1,4 @@
 
-import { backgroundService } from './backgroundService';
-
 export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioContext[]>) => {
   console.log('Creating default beep audio');
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -26,25 +24,12 @@ export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioC
   return oscillator;
 };
 
-export const playCustomRingtone = async (customRingtone: string | null, audioContextsRef?: React.MutableRefObject<AudioContext[]>): Promise<HTMLAudioElement | null> => {
+export const playCustomRingtone = (customRingtone: string | null, audioContextsRef?: React.MutableRefObject<AudioContext[]>): Promise<HTMLAudioElement | null> => {
   console.log('playCustomRingtone called with:', customRingtone);
   
-  if (customRingtone) {
-    console.log('Playing custom ringtone:', customRingtone);
-    
-    // Cache the custom ringtone for background use
-    try {
-      const response = await fetch(customRingtone);
-      const blob = await response.blob();
-      await backgroundService.cacheCustomRingtone(blob);
-      
-      // Set flag to indicate custom sound is being used
-      localStorage.setItem('use_default_sound', 'false');
-    } catch (error) {
-      console.error('Error caching custom ringtone:', error);
-    }
-    
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
+    if (customRingtone) {
+      console.log('Playing custom ringtone:', customRingtone);
       const audio = new Audio(customRingtone);
       audio.loop = false; // Don't loop - play only once
       audio.volume = 0.8; // Set volume
@@ -59,23 +44,11 @@ export const playCustomRingtone = async (customRingtone: string | null, audioCon
         createBeepAudio(audioContextsRef);
         resolve(null);
       });
-    });
-  } else {
-    console.log('No custom ringtone provided, playing default beep');
-    // Set flag to indicate default sound is being used
-    localStorage.setItem('use_default_sound', 'true');
-    // Play default beep
-    createBeepAudio(audioContextsRef);
-    return null;
-  }
-};
-
-export const clearCustomRingtoneCache = () => {
-  try {
-    localStorage.removeItem('custom_ringtone_data');
-    localStorage.setItem('use_default_sound', 'true');
-    console.log('Custom ringtone cache cleared');
-  } catch (error) {
-    console.error('Error clearing custom ringtone cache:', error);
-  }
+    } else {
+      console.log('No custom ringtone provided, playing default beep');
+      // Play default beep
+      createBeepAudio(audioContextsRef);
+      resolve(null);
+    }
+  });
 };

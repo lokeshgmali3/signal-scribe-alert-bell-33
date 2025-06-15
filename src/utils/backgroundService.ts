@@ -1,3 +1,4 @@
+
 import { App } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -8,8 +9,6 @@ class BackgroundService {
   private notificationIds: number[] = [];
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
   private isAppActive = true;
-  private customRingtoneData: string | null = null;
-  private audioContexts: AudioContext[] = [];
 
   async initialize() {
     try {
@@ -18,9 +17,6 @@ class BackgroundService {
       
       // Set up app state listeners
       await this.setupAppStateListeners();
-      
-      // Load cached custom ringtone
-      await this.loadCachedRingtone();
       
       console.log('Background service initialized successfully');
     } catch (error) {
@@ -35,38 +31,6 @@ class BackgroundService {
       console.log('Notification permission status:', notificationPermission);
     } catch (error) {
       console.error('Error requesting permissions:', error);
-    }
-  }
-
-  private async loadCachedRingtone() {
-    try {
-      const cached = localStorage.getItem('custom_ringtone_data');
-      if (cached) {
-        this.customRingtoneData = cached;
-        console.log('Loaded cached custom ringtone data');
-      }
-    } catch (error) {
-      console.error('Error loading cached ringtone:', error);
-    }
-  }
-
-  async cacheCustomRingtone(audioBlob: Blob) {
-    try {
-      // Convert blob to base64 for persistent storage
-      const reader = new FileReader();
-      return new Promise<void>((resolve, reject) => {
-        reader.onload = () => {
-          const base64Data = reader.result as string;
-          this.customRingtoneData = base64Data;
-          localStorage.setItem('custom_ringtone_data', base64Data);
-          console.log('Custom ringtone cached successfully');
-          resolve();
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(audioBlob);
-      });
-    } catch (error) {
-      console.error('Error caching custom ringtone:', error);
     }
   }
 
@@ -133,9 +97,6 @@ class BackgroundService {
         if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
           await this.triggerBackgroundNotification(signal);
           
-          // Play background audio
-          await this.playBackgroundAudio();
-          
           // Mark signal as triggered
           signal.triggered = true;
           console.log('Signal triggered in background:', signal);
@@ -143,80 +104,6 @@ class BackgroundService {
       }
     } catch (error) {
       console.error('Error checking signals in background:', error);
-    }
-  }
-
-  private async playBackgroundAudio() {
-    try {
-      const useDefault = localStorage.getItem('use_default_sound') !== 'false';
-      
-      if (useDefault || !this.customRingtoneData) {
-        // Play default beep using Web Audio API (works in background)
-        await this.playDefaultBeep();
-      } else {
-        // Play custom sound using Web Audio API for background compatibility
-        await this.playCustomSoundInBackground();
-      }
-    } catch (error) {
-      console.error('Error playing background audio:', error);
-      // Fallback to default beep
-      await this.playDefaultBeep();
-    }
-  }
-
-  private async playDefaultBeep() {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      this.audioContexts.push(audioContext);
-      
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      oscillator.frequency.value = 800;
-      oscillator.type = 'sine';
-      gainNode.gain.value = 0.3;
-      
-      const duration = 3000; // 3 seconds
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + duration / 1000);
-      
-      console.log('Default beep played in background');
-    } catch (error) {
-      console.error('Error playing default beep:', error);
-    }
-  }
-
-  private async playCustomSoundInBackground() {
-    try {
-      if (!this.customRingtoneData) return;
-      
-      // Convert base64 data to ArrayBuffer
-      const response = await fetch(this.customRingtoneData);
-      const arrayBuffer = await response.arrayBuffer();
-      
-      // Use Web Audio API to decode and play
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      this.audioContexts.push(audioContext);
-      
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      const source = audioContext.createBufferSource();
-      const gainNode = audioContext.createGain();
-      
-      source.buffer = audioBuffer;
-      source.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      gainNode.gain.value = 0.8;
-      
-      source.start();
-      
-      console.log('Custom sound played in background using Web Audio API');
-    } catch (error) {
-      console.error('Error playing custom sound in background:', error);
-      // Fallback to default beep
-      await this.playDefaultBeep();
     }
   }
 
@@ -353,15 +240,6 @@ class BackgroundService {
     try {
       this.stopBackgroundMonitoring();
       await this.cancelAllScheduledNotifications();
-      
-      // Clean up audio contexts
-      this.audioContexts.forEach(context => {
-        if (context.state !== 'closed') {
-          context.close().catch(err => console.log('Audio context cleanup error:', err));
-        }
-      });
-      this.audioContexts = [];
-      
       console.log('Background service cleaned up');
     } catch (error) {
       console.error('Error cleaning up background service:', error);

@@ -1,4 +1,3 @@
-
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage } from './signalStorage';
@@ -18,7 +17,7 @@ export const startBackgroundTask = async () => {
       return;
     }
 
-    console.log('Background task started - using enhanced hybrid monitoring');
+    console.log('Background task started - using hybrid monitoring');
     
     // Start checking signals every second for web functionality
     backgroundCheckInterval = setInterval(async () => {
@@ -49,7 +48,7 @@ const checkSignalsInBackground = async () => {
         
         // Mark signal as triggered and save back to storage
         signal.triggered = true;
-        console.log('Signal triggered in enhanced background:', signal);
+        console.log('Signal triggered in web background:', signal);
       }
     }
   } catch (error) {
@@ -82,10 +81,10 @@ const triggerLocalNotification = async (signal: Signal) => {
   }
 };
 
-// Schedule notifications in advance for all signals using the enhanced background service
+// Schedule notifications in advance for all signals using the background service
 export const scheduleAllSignalNotifications = async (signals: Signal[]) => {
   try {
-    // Use the enhanced background service for comprehensive scheduling
+    // Use the background service for comprehensive scheduling
     await backgroundService.scheduleAllSignals(signals);
     
     // Also handle web-based scheduling as fallback
@@ -128,7 +127,7 @@ export const scheduleAllSignalNotifications = async (signals: Signal[]) => {
       await LocalNotifications.schedule({
         notifications: notifications as any[]
       });
-      console.log(`Scheduled ${notifications.length} enhanced web notifications`);
+      console.log(`Scheduled ${notifications.length} web notifications`);
     }
   } catch (error) {
     console.error('Failed to schedule signal notifications:', error);
