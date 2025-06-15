@@ -10,6 +10,8 @@ import { AndroidForegroundService } from './androidForegroundService';
 import { AndroidAlarmManager } from './androidAlarmManager';
 import { AndroidBatteryManager } from './androidBatteryManager';
 
+const AUDIO_ONLY_MODE_KEY = 'audioOnlyMode';
+
 export class BackgroundServiceCore {
   private instanceId: string;
   private isAppActive = true;
@@ -20,8 +22,11 @@ export class BackgroundServiceCore {
   private audioManager: BackgroundAudioManager;
   private monitoringManager: BackgroundMonitoringManager;
 
+  private audioOnlyMode: boolean = false;
+
   constructor() {
     this.instanceId = globalBackgroundManager.generateInstanceId();
+    this.audioOnlyMode = localStorage.getItem(AUDIO_ONLY_MODE_KEY) === 'true';
     console.log('🚀 Background service instance created with ID:', this.instanceId);
     
     this.notificationManager = new BackgroundNotificationManager();
@@ -31,13 +36,27 @@ export class BackgroundServiceCore {
       this.notificationManager,
       this.audioManager
     );
+    this.monitoringManager.setAudioOnlyMode(this.audioOnlyMode);
+  }
+
+  setAudioOnlyMode(mode: boolean) {
+    this.audioOnlyMode = mode;
+    localStorage.setItem(AUDIO_ONLY_MODE_KEY, mode ? "true" : "false");
+    this.monitoringManager.setAudioOnlyMode(mode);
+    console.log('Audio Only Mode set to:', mode);
+  }
+  getAudioOnlyMode() {
+    return this.audioOnlyMode;
   }
 
   async initialize() {
     try {
       console.log('🚀 Initializing background service instance:', this.instanceId);
-      await this.notificationManager.requestPermissions();
-      
+      // Don't request notification permissions if audio-only
+      if (!this.audioOnlyMode) {
+        await this.notificationManager.requestPermissions();
+      }
+
       if (!this.appStateListenerInitialized) {
         await this.setupAppStateListeners();
         this.appStateListenerInitialized = true;
@@ -49,6 +68,7 @@ export class BackgroundServiceCore {
         await this.requestBatteryOptimizationBypass();
       }
 
+      this.monitoringManager.setAudioOnlyMode(this.audioOnlyMode); // propagate always
       this.monitoringManager.startBackgroundMonitoring();
 
       // Output debug info

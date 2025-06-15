@@ -5,12 +5,29 @@ import { BackgroundNotificationManager } from './backgroundNotificationManager';
 import { BackgroundAudioManager } from './backgroundAudioManager';
 import { globalSignalProcessingLock } from './globalSignalProcessingLock';
 
+const AUDIO_ONLY_MODE_KEY = 'audioOnlyMode';
+
+function getAudioOnlyMode(): boolean {
+  try {
+    // Defaults to false for backward compatibility
+    return localStorage.getItem(AUDIO_ONLY_MODE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+function setAudioOnlyMode(val: boolean) {
+  try {
+    localStorage.setItem(AUDIO_ONLY_MODE_KEY, val ? 'true' : 'false');
+  } catch {}
+}
+
 export class BackgroundMonitoringManager {
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
   private signalProcessingLock = new Set<string>();
   private instanceId: string;
   private notificationManager: BackgroundNotificationManager;
   private audioManager: BackgroundAudioManager;
+  private audioOnlyMode: boolean;
 
   // === CACHE & PERF ===
   private cachedSignals: Signal[] = [];
@@ -38,6 +55,7 @@ export class BackgroundMonitoringManager {
     this.instanceId = instanceId;
     this.notificationManager = notificationManager;
     this.audioManager = audioManager;
+    this.audioOnlyMode = getAudioOnlyMode();
     this.initCache();
     this.registerSignalsListener();
   }
@@ -98,13 +116,31 @@ export class BackgroundMonitoringManager {
 
     // ← Make monitoring persistent. Do NOT stop in foreground.
 
-    console.log('🚀 Starting background monitoring for instance:', this.instanceId);
+    console.log(
+      '🚀 Starting background monitoring for instance:',
+      this.instanceId,
+      'Audio only mode:',
+      this.audioOnlyMode
+    );
     // Store the last interval timestamp to detect throttling/drift
     this.lastCheckTime = null;
     this.throttleDetected = false;
     this.driftAccumMs = 0;
 
+    // --- Aggressive wake lock handling ---
+    const attemptAcquireWakeLock = async () => {
+      try {
+        if ("wakeLock" in navigator) {
+          // @ts-ignore
+          await navigator.wakeLock.request("screen");
+          // let the lock auto-release or be recovered
+        }
+      } catch { /* Ignore errors, not all browsers support */ }
+    };
+
     this.backgroundCheckInterval = setInterval(async () => {
+      await attemptAcquireWakeLock();
+
       const now = Date.now();
       if (this.lastCheckTime !== null) {
         const elapsed = now - this.lastCheckTime;
@@ -112,7 +148,12 @@ export class BackgroundMonitoringManager {
           // Browser likely throttled this timer; report (for debug only)
           this.throttleDetected = true;
           this.driftAccumMs += elapsed - 1000;
-          console.warn(`[Monitor] Timer drift/throttle detected! Interval ms:`, elapsed, 'Total drift:', this.driftAccumMs);
+          console.warn(
+            `[Monitor] Timer drift/throttle detected! Interval ms:`,
+            elapsed,
+            'Total drift:',
+            this.driftAccumMs
+          );
         }
       }
       this.lastCheckTime = now;
@@ -210,7 +251,10 @@ export class BackgroundMonitoringManager {
             this.metrics.signalTriggers++;
             console.log('🚀 Signal should trigger in background:', signal);
 
-            await this.notificationManager.triggerBackgroundNotification(signal);
+            // --- AUDIO ONLY MODE: skip notification
+            if (!this.audioOnlyMode) {
+              await this.notificationManager.triggerBackgroundNotification(signal);
+            }
             await this.audioManager.playBackgroundAudio(signal);
 
             signalsToTrigger.push(signal);
@@ -223,6 +267,24 @@ export class BackgroundMonitoringManager {
           globalSignalProcessingLock.unlockSignal(signalKey);
         }
       }
+
+      // --- Recovery sweep: trigger any signals missed in the last interval up to 2 minutes back
+      // (browser wake/sleep - triggers recovery for up to 120 sec missed)
+      if (this.throttleDetected && signals) {
+        const recoveryNow = new Date();
+        for (const signal of signals) {
+          if (!signal.triggered) {
+            const triggered = this.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, recoveryNow);
+            if (triggered) {
+              // Optionally re-trigger missed signal audio
+              console.warn('[Recovery] Missed signal detected (timer drift), catching up audio:', signal);
+              await this.audioManager.playBackgroundAudio(signal); // Beep/audio only, do not re-notify
+              signalsToTrigger.push(signal);
+            }
+          }
+        }
+      }
+
       // Atomically update only relevant signals, handle each independently and recover if failed
       for (const triggeredSignal of signalsToTrigger) {
         await this.atomicallyMarkSignalAsTriggered(triggeredSignal);
@@ -296,5 +358,13 @@ export class BackgroundMonitoringManager {
   // PERF
   getMetrics() {
     return { ...this.metrics, cacheVersion: this.cacheVersion };
+  }
+
+  setAudioOnlyMode(mode: boolean) {
+    this.audioOnlyMode = mode;
+    setAudioOnlyMode(mode);
+  }
+  getAudioOnlyMode() {
+    return this.audioOnlyMode;
   }
 }
