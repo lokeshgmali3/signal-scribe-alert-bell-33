@@ -1,3 +1,4 @@
+
 import { App } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Signal } from '@/types/signal';
@@ -114,7 +115,9 @@ export class BackgroundServiceCore {
   async playBackgroundAudio(signal?: Signal) {
     // Try native Android first
     if (nativeAndroidManager.isAndroidNative()) {
-      const nativeSuccess = await nativeAndroidManager.playNativeAudio(this.customRingtone || undefined);
+      const audioInfo = this.audioManager.getAudioInfo();
+      const customRingtone = audioInfo.hasCustomRingtone ? 'custom' : undefined;
+      const nativeSuccess = await nativeAndroidManager.playNativeAudio(customRingtone);
       if (nativeSuccess) {
         console.log('🤖 Using native Android audio playback');
         return;
