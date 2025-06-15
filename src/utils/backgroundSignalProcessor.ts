@@ -1,5 +1,6 @@
+
 import { Signal } from '@/types/signal';
-import { loadAntidelayFromStorage, saveSignalsToStorage, loadSignalsFromStorage } from './signalStorage'; // <-- Added loadSignalsFromStorage here
+import { loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
 import { globalBackgroundManager } from './globalBackgroundManager';
 import { globalSignalProcessingLock } from './globalSignalProcessingLock';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
@@ -54,13 +55,11 @@ export class BackgroundSignalProcessor {
         if (!acquired) continue;
 
         try {
-          // Prevent duplicate triggers: respect global and in-memory lock, AND triggered flag
-          if (this.signalProcessingLock.has(signalKey) || signal.triggered) {
+          if (this.signalProcessingLock.has(signalKey)) {
             continue;
           }
-          if (this.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, now)) {
-            // Mark triggered everywhere (local cache, lock list)
-            signal.triggered = true;
+
+          if (this.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, now) && !signal.triggered) {
             this.signalProcessingLock.add(signalKey);
             this.signalTriggers++;
             console.log('🚀 Signal should trigger in background:', signal);
@@ -72,7 +71,6 @@ export class BackgroundSignalProcessor {
 
             signalsToTrigger.push(signal);
 
-            // Remove from lock after a short delay (so repeated intervals can't retrigger this signal)
             setTimeout(() => {
               this.signalProcessingLock.delete(signalKey);
             }, 2000);
@@ -82,11 +80,11 @@ export class BackgroundSignalProcessor {
         }
       }
 
-      // Atomically update triggered signals in storage
+      // Atomically update triggered signals
       for (const triggeredSignal of signalsToTrigger) {
         await this.atomicallyMarkSignalAsTriggered(triggeredSignal);
       }
-
+      
       if (signalsToTrigger.length > 0) {
         window.dispatchEvent(new Event('signals-storage-update'));
       }
