@@ -1,4 +1,3 @@
-
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage } from './signalStorage';
@@ -20,9 +19,6 @@ export const startBackgroundTask = async () => {
 
     console.log('Background task started - using hybrid monitoring');
     
-    // Enable background service for native functionality
-    await backgroundService.enableBackgroundMode();
-    
     // Start checking signals every second for web functionality
     backgroundCheckInterval = setInterval(async () => {
       await checkSignalsInBackground();
@@ -39,11 +35,6 @@ export const stopBackgroundTask = () => {
     backgroundCheckInterval = undefined;
     console.log('Background task stopped');
   }
-  
-  // Disable background service
-  backgroundService.disableBackgroundMode().catch(error => {
-    console.error('Error disabling background service:', error);
-  });
 };
 
 const checkSignalsInBackground = async () => {
