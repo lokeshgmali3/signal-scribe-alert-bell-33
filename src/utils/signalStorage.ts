@@ -10,6 +10,8 @@ export const saveSignalsToStorage = async (signals: Signal[]) => {
     await globalBackgroundManager.withStorageLock(() => {
       localStorage.setItem(SIGNALS_STORAGE_KEY, JSON.stringify(signals));
       console.log('Signals saved to localStorage:', signals);
+      // Dispatch event for any listeners (cache invalidation)
+      window.dispatchEvent(new Event('signals-storage-update'));
     });
   } catch (error) {
     console.error('Failed to save signals to localStorage:', error);
@@ -33,6 +35,7 @@ export const loadSignalsFromStorage = (): Signal[] => {
 export const saveAntidelayToStorage = (seconds: number) => {
   try {
     localStorage.setItem(ANTIDELAY_STORAGE_KEY, seconds.toString());
+    // Optionally: window.dispatchEvent(new Event('antidelay-storage-update'));
   } catch (error) {
     console.error('Failed to save antidelay to localStorage:', error);
   }
@@ -54,6 +57,7 @@ export const clearSignalsFromStorage = () => {
   try {
     localStorage.removeItem(SIGNALS_STORAGE_KEY);
     console.log('Signals cleared from localStorage');
+    window.dispatchEvent(new Event('signals-storage-update'));
   } catch (error) {
     console.error('Failed to clear signals from localStorage:', error);
   }
