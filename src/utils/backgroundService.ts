@@ -12,6 +12,7 @@ interface CachedAudio {
 }
 
 class BackgroundService {
+  private static instance: BackgroundService | null = null;
   private notificationIds: number[] = [];
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
   private isAppActive = true;
@@ -19,13 +20,22 @@ class BackgroundService {
   private cachedAudio: CachedAudio | null = null;
   private appStateListenerInitialized = false;
   private isBackgroundMonitoringActive = false;
+  private signalProcessingLock = new Set<string>();
+
+  // Singleton pattern to prevent multiple instances
+  static getInstance(): BackgroundService {
+    if (!BackgroundService.instance) {
+      BackgroundService.instance = new BackgroundService();
+    }
+    return BackgroundService.instance;
+  }
 
   async initialize() {
     try {
       console.log('🚀 Initializing background service');
       await this.requestPermissions();
       
-      // Only set up listeners once
+      // Only set up listeners once per instance
       if (!this.appStateListenerInitialized) {
         await this.setupAppStateListeners();
         this.appStateListenerInitialized = true;
@@ -88,15 +98,19 @@ class BackgroundService {
   private async setupAppStateListeners() {
     console.log('🚀 Setting up app state listeners');
     
+    // Remove any existing listeners first
+    App.removeAllListeners();
+    LocalNotifications.removeAllListeners();
+    
     App.addListener('appStateChange', ({ isActive }) => {
       console.log('🚀 App state changed. Active:', isActive);
       this.isAppActive = isActive;
       
       if (!isActive) {
-        console.log('🚀 App moved to background - starting aggressive monitoring');
+        console.log('🚀 App moved to background - starting monitoring');
         this.startBackgroundMonitoring();
       } else {
-        console.log('🚀 App came to foreground - stopping background monitoring');
+        console.log('🚀 App came to foreground - stopping monitoring');
         this.stopBackgroundMonitoring();
       }
     });
@@ -116,7 +130,7 @@ class BackgroundService {
       return;
     }
 
-    // Clear any existing interval first to prevent duplicates
+    // Clear any existing interval first
     if (this.backgroundCheckInterval) {
       console.log('🚀 Clearing existing background monitor before starting new one');
       clearInterval(this.backgroundCheckInterval);
@@ -135,7 +149,6 @@ class BackgroundService {
       console.log('🚀 Stopping background monitoring');
       clearInterval(this.backgroundCheckInterval);
       this.backgroundCheckInterval = null;
-      console.log('🚀 Background monitoring stopped');
     }
     this.isBackgroundMonitoringActive = false;
   }
@@ -150,12 +163,20 @@ class BackgroundService {
       }
 
       const now = new Date();
-      console.log('🚀 Background check at:', now.toLocaleTimeString(), 'for', signals.length, 'signals');
-      
       let signalsUpdated = false;
       
       for (const signal of signals) {
+        const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
+        
+        // Check if already processing this signal
+        if (this.signalProcessingLock.has(signalKey)) {
+          continue;
+        }
+        
         if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
+          // Lock this signal for processing
+          this.signalProcessingLock.add(signalKey);
+          
           console.log('🚀 Signal should trigger in background:', signal);
           await this.triggerBackgroundNotification(signal);
           await this.playBackgroundAudio(signal);
@@ -164,6 +185,11 @@ class BackgroundService {
           signal.triggered = true;
           signalsUpdated = true;
           console.log('🚀 Signal marked as triggered in background:', signal.timestamp);
+          
+          // Release lock after processing
+          setTimeout(() => {
+            this.signalProcessingLock.delete(signalKey);
+          }, 2000);
         }
       }
       
@@ -171,7 +197,6 @@ class BackgroundService {
       if (signalsUpdated) {
         console.log('🚀 Saving updated signals to storage after background trigger');
         saveSignalsToStorage(signals);
-        console.log('🚀 Updated signals saved to localStorage');
       }
     } catch (error) {
       console.error('🚀 Error checking signals in background:', error);
@@ -188,15 +213,7 @@ class BackgroundService {
     const targetTime = new Date(signalDate.getTime() - (antidelaySeconds * 1000));
     const timeDiff = Math.abs(now.getTime() - targetTime.getTime());
     
-    const shouldTrigger = timeDiff < 1000;
-    if (shouldTrigger) {
-      console.log('🚀 Signal timing check - should trigger:', signal.timestamp);
-      console.log('🚀 Target time:', targetTime.toLocaleTimeString());
-      console.log('🚀 Current time:', now.toLocaleTimeString());
-      console.log('🚀 Time diff (ms):', timeDiff);
-    }
-    
-    return shouldTrigger;
+    return timeDiff < 1000;
   }
 
   private async triggerBackgroundNotification(signal: Signal) {
@@ -319,6 +336,9 @@ class BackgroundService {
       this.stopBackgroundMonitoring();
       await this.cancelAllScheduledNotifications();
       this.clearCustomAudio();
+      this.signalProcessingLock.clear();
+      App.removeAllListeners();
+      LocalNotifications.removeAllListeners();
       console.log('🚀 Background service cleaned up');
     } catch (error) {
       console.error('🚀 Error cleaning up background service:', error);
@@ -329,9 +349,10 @@ class BackgroundService {
     return {
       isBackgroundMonitoringActive: this.isBackgroundMonitoringActive,
       hasBackgroundInterval: !!this.backgroundCheckInterval,
-      isAppActive: this.isAppActive
+      isAppActive: this.isAppActive,
+      processingSignals: Array.from(this.signalProcessingLock)
     };
   }
 }
 
-export const backgroundService = new BackgroundService();
+export const backgroundService = BackgroundService.getInstance();

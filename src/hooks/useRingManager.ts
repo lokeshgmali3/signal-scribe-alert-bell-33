@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { Signal } from '@/types/signal';
 import { checkSignalTime } from '@/utils/signalUtils';
@@ -36,9 +37,14 @@ export const useRingManager = (
       return;
     }
 
+    // Skip if page is hidden - let background service handle it
+    if (document.hidden) {
+      console.log('🔔 Page is hidden, skipping foreground trigger - background service will handle');
+      return;
+    }
+
     console.log('🔔 Triggering ring for signal:', signal, 'with customRingtone:', currentCustomRingtone ? 'custom' : 'default');
     console.log('🔔 Document visibility state:', document.visibilityState);
-    console.log('🔔 Page hidden:', document.hidden);
     
     setTriggeredSignals(prev => new Set(prev).add(signalKey));
     setIsRinging(true);
@@ -46,11 +52,6 @@ export const useRingManager = (
     
     const lock = await requestWakeLock();
     setWakeLock(lock);
-
-    if (document.hidden) {
-      console.log('🔔 Page is hidden, trying to focus window');
-      window.focus();
-    }
 
     try {
       const audio = await playCustomRingtone(currentCustomRingtone, audioContextsRef);
@@ -98,10 +99,16 @@ export const useRingManager = (
       intervalRef.current = null;
     }
 
+    // Only set up foreground monitoring if we have signals and app is visible
     if (savedSignals.length > 0) {
       console.log('🔔 Setting up signal checking interval for', savedSignals.length, 'signals');
       
       intervalRef.current = setInterval(() => {
+        // Skip checking if page is hidden - background service handles this
+        if (document.hidden) {
+          return;
+        }
+        
         const now = new Date();
         
         savedSignals.forEach(signal => {

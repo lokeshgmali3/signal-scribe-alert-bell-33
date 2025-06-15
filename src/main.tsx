@@ -4,7 +4,7 @@ import App from './App.tsx'
 import './index.css'
 import { backgroundService } from './utils/backgroundService'
 
-// Initialize background service for native mobile functionality
+// Initialize background service singleton for native mobile functionality
 backgroundService.initialize().catch(error => {
   console.error('Failed to initialize background service:', error);
 });
@@ -42,7 +42,7 @@ if ('Notification' in window && Notification.permission === 'default') {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     console.log('App moved to background');
-    // Background service will handle this automatically
+    // Background service singleton will handle this automatically
   } else {
     console.log('App returned to foreground');
     // Reload signals from storage to sync any changes made in background
