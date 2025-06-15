@@ -1,8 +1,14 @@
-
 import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useNotificationPermission } from "@/hooks/useNotificationPermission";
+
+// For direct Chrome site settings link:
+function getChromeSiteSettingsUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const origin = window.location.origin;
+  return `chrome://settings/content/siteDetails?site=${encodeURIComponent(origin)}`;
+}
 
 export default function NotificationPermissionPopup() {
   const {
@@ -19,6 +25,9 @@ export default function NotificationPermissionPopup() {
   const [showDialog, setShowDialog] = useState(
     effectivePermission === "default" || effectivePermission === "denied"
   );
+  const [lastPermResult, setLastPermResult] = useState<NotificationPermission | null>(null);
+  const [testNotifStatus, setTestNotifStatus] = useState<null | "ok" | "fail" | "pending">(null);
+  const [testNotifMessage, setTestNotifMessage] = useState<string>("");
 
   // Show dialog if permission not granted/denied
   React.useEffect(() => {
@@ -29,7 +38,71 @@ export default function NotificationPermissionPopup() {
     }
   }, [effectivePermission]);
 
+  // Try to send a test notification to see if it's really functioning
+  async function handleTestNotification() {
+    setTestNotifStatus("pending");
+    setTestNotifMessage("");
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        const n = new Notification("🚦 Test Notification", { body: "Signal Tracker: test notification sent!", silent: true });
+        setTestNotifStatus("ok");
+        setTestNotifMessage("Test notification dispatched! (Check your OS notification area)");
+        setTimeout(() => n.close && n.close(), 4000);
+      } else if ((window as any).Capacitor?.Plugins?.LocalNotifications) {
+        await (window as any).Capacitor.Plugins.LocalNotifications.schedule({
+          notifications: [
+            {
+              title: "🚦 Test Notification",
+              body: "Signal Tracker: test notification (Capacitor)!",
+              id: Date.now(),
+              schedule: { at: new Date() }
+            }
+          ]
+        });
+        setTestNotifStatus("ok");
+        setTestNotifMessage("Capacitor notification dispatched.");
+      } else {
+        setTestNotifStatus("fail");
+        setTestNotifMessage("Notifications are not enabled or your browser does not support them.");
+      }
+    } catch (err: any) {
+      setTestNotifStatus("fail");
+      setTestNotifMessage("Failed to send notification: " + err?.message || String(err));
+    }
+  }
+
+  // Permission (un)block guide for Chrome
+  function renderChromePermissionReset() {
+    const siteSetUrl = getChromeSiteSettingsUrl();
+    return (
+      <div className="mt-3 text-xs bg-yellow-50 border border-yellow-300 rounded p-2 text-yellow-800">
+        <b>Still seeing "Notifications Disabled" in Chrome after allowing?</b>
+        <ul className="mt-1 ml-4 list-disc text-xs">
+          <li>1. Click the <b>🔒 padlock</b> or <b>info</b> icon to the left of the address bar.</li>
+          <li>2. Choose <b>Site settings</b>.</li>
+          <li>3. Find <b>Notifications</b> and set it to <b>Allow</b>.</li>
+          <li>4. Reload this page (Ctrl+R).</li>
+        </ul>
+        {siteSetUrl && (
+          <div className="mt-1">
+            <a
+              href={siteSetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-700 underline"
+            >Open Chrome site settings for this site</a>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function getBrowserHelp() {
+    // If denied and Chrome, show explicit guide:
+    if (browser === "Chrome" && effectivePermission === "denied") {
+      return renderChromePermissionReset();
+    }
+    // ...keep existing help for other browsers...
     if (browser === "IE" || browser === "Edge") {
       return (
         <div className="text-xs text-yellow-900 mt-2">
@@ -73,25 +146,41 @@ export default function NotificationPermissionPopup() {
     );
   }
 
-  // Debug panel
   function renderDebugPanel() {
     return (
       <div className="bg-slate-50 rounded mt-3 border text-xs p-2 text-left font-mono select-text break-all">
         <div><b>Browser:</b> {browser}</div>
         <div><b>Web Notification.permission:</b> {webPermission ?? "N/A"}</div>
         <div><b>Capacitor LocalNotifications:</b> {capacitorPermission ?? "N/A"}</div>
+        <div><b>Effective Permission:</b> {effectivePermission}</div>
+        <div><b>Last Request Permission Result:</b> {lastPermResult ?? "N/A"}</div>
         <pre>{debug}</pre>
         <Button
           variant="secondary"
           size="sm"
           className="mt-2"
-          onClick={() => {
+          onClick={async () => {
             console.log("Re-check status clicked");
-            checkPermissions();
+            await checkPermissions();
           }}
         >
           Re-check status
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-2 mt-2"
+          onClick={handleTestNotification}
+          disabled={testNotifStatus === "pending"}
+        >
+          {testNotifStatus === "pending" ? "Testing…" : "Test Notification"}
+        </Button>
+        {testNotifStatus === "ok" && (
+          <div className="text-green-700 mt-1 font-bold">Test notification sent! {testNotifMessage}</div>
+        )}
+        {testNotifStatus === "fail" && (
+          <div className="text-red-700 mt-1 font-bold">Failed: {testNotifMessage}</div>
+        )}
       </div>
     );
   }
@@ -128,10 +217,29 @@ export default function NotificationPermissionPopup() {
             <Button
               onClick={async () => {
                 console.log("Enable Notifications clicked");
-                await requestPermission();
-                setTimeout(() => checkPermissions(), 500);
+                let result: NotificationPermission = "default";
+                try {
+                  // Always attempt permission request (Chrome allows re-prompt only via site settings after denied)
+                  if ("Notification" in window) {
+                    result = await Notification.requestPermission();
+                    setLastPermResult(result);
+                    console.log("Notification.requestPermission result:", result);
+                  }
+                  if ((window as any).Capacitor?.Plugins?.LocalNotifications) {
+                    const capResult = await (window as any).Capacitor.Plugins.LocalNotifications.requestPermissions();
+                    // 'granted', 'denied', 'prompt'
+                    setLastPermResult((capResult?.display as NotificationPermission) ?? result);
+                    console.log("Capacitor.LocalNotifications.requestPermissions result:", capResult);
+                  }
+                } catch (err) {
+                  setLastPermResult("denied");
+                  console.error("Permission request error:", err);
+                }
+                // Always check/refresh
+                setTimeout(() => checkPermissions(), 400);
               }}
               size="sm"
+              variant="default"
             >
               Enable Notifications
             </Button>
