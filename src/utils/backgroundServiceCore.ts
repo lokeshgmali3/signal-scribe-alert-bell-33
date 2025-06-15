@@ -245,6 +245,7 @@ export class BackgroundServiceCore {
   }
 
   getStatus() {
+    // Use debugBackgroundStatus as the status getter
     return this.debugBackgroundStatus();
   }
 
