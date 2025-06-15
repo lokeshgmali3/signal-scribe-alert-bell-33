@@ -1,6 +1,4 @@
 
-import { Plugins } from '@capacitor/core';
-
 // Placeholder for native/cordova implementation; this will use plugins in a real build
 export class AndroidForegroundService {
   private static instance: AndroidForegroundService | null = null;
@@ -57,3 +55,4 @@ export class AndroidForegroundService {
     return this.isRunning;
   }
 }
+
