@@ -18,6 +18,7 @@ class BackgroundService {
   private customRingtone: string | null = null;
   private cachedAudio: CachedAudio | null = null;
   private appStateListenerInitialized = false;
+  private isBackgroundMonitoringActive = false;
 
   async initialize() {
     try {
@@ -109,6 +110,12 @@ class BackgroundService {
   }
 
   private startBackgroundMonitoring() {
+    // Prevent multiple instances
+    if (this.isBackgroundMonitoringActive) {
+      console.log('🚀 Background monitoring already active, skipping start');
+      return;
+    }
+
     // Clear any existing interval first to prevent duplicates
     if (this.backgroundCheckInterval) {
       console.log('🚀 Clearing existing background monitor before starting new one');
@@ -116,6 +123,7 @@ class BackgroundService {
       this.backgroundCheckInterval = null;
     }
 
+    this.isBackgroundMonitoringActive = true;
     console.log('🚀 Starting background monitoring with 1-second intervals');
     this.backgroundCheckInterval = setInterval(async () => {
       await this.checkSignalsInBackground();
@@ -129,6 +137,7 @@ class BackgroundService {
       this.backgroundCheckInterval = null;
       console.log('🚀 Background monitoring stopped');
     }
+    this.isBackgroundMonitoringActive = false;
   }
 
   private async checkSignalsInBackground() {
@@ -137,7 +146,6 @@ class BackgroundService {
       const antidelaySeconds = loadAntidelayFromStorage();
       
       if (!signals || signals.length === 0) {
-        console.log('🚀 No signals found in background check');
         return;
       }
 
@@ -315,6 +323,14 @@ class BackgroundService {
     } catch (error) {
       console.error('🚀 Error cleaning up background service:', error);
     }
+  }
+
+  getStatus() {
+    return {
+      isBackgroundMonitoringActive: this.isBackgroundMonitoringActive,
+      hasBackgroundInterval: !!this.backgroundCheckInterval,
+      isAppActive: this.isAppActive
+    };
   }
 }
 

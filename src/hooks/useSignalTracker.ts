@@ -3,7 +3,8 @@ import { useEffect } from 'react';
 import { 
   startBackgroundTask, 
   stopBackgroundTask, 
-  scheduleAllSignalNotifications 
+  scheduleAllSignalNotifications,
+  getBackgroundTaskStatus
 } from '@/utils/backgroundTaskManager';
 import { useSignalState } from './useSignalState';
 import { useRingManager } from './useRingManager';
@@ -49,7 +50,12 @@ export const useSignalTracker = () => {
   // Start background task when app loads and signals exist
   useEffect(() => {
     if (savedSignals.length > 0) {
-      startBackgroundTask();
+      // Check if background task is already running to prevent duplicates
+      const status = getBackgroundTaskStatus();
+      if (!status.isActive) {
+        startBackgroundTask();
+      }
+      
       scheduleAllSignalNotifications(savedSignals);
       
       // Register service worker for background sync
@@ -58,10 +64,17 @@ export const useSignalTracker = () => {
           type: 'REGISTER_BACKGROUND_SYNC'
         });
       }
+    } else {
+      // Stop background task if no signals
+      stopBackgroundTask();
     }
 
     return () => {
-      stopBackgroundTask();
+      // Only stop if this is the last instance
+      const status = getBackgroundTaskStatus();
+      if (status.isActive && savedSignals.length === 0) {
+        stopBackgroundTask();
+      }
     };
   }, [savedSignals]);
 

@@ -1,3 +1,4 @@
+
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
@@ -5,9 +6,16 @@ import { checkSignalTime } from './signalUtils';
 import { backgroundService } from './backgroundService';
 
 let backgroundCheckInterval: NodeJS.Timeout | undefined;
+let isBackgroundTaskActive = false;
 
 export const startBackgroundTask = async () => {
   try {
+    // Prevent multiple instances
+    if (isBackgroundTaskActive) {
+      console.log('🚀 Background task already active, skipping start');
+      return;
+    }
+
     // Request notification permissions first
     const permission = await LocalNotifications.requestPermissions();
     console.log('Notification permission:', permission);
@@ -24,6 +32,7 @@ export const startBackgroundTask = async () => {
       backgroundCheckInterval = undefined;
     }
 
+    isBackgroundTaskActive = true;
     console.log('Background task started - using hybrid monitoring');
     
     // Start checking signals every second for web functionality
@@ -33,6 +42,7 @@ export const startBackgroundTask = async () => {
 
   } catch (error) {
     console.error('Failed to start background task:', error);
+    isBackgroundTaskActive = false;
   }
 };
 
@@ -42,6 +52,7 @@ export const stopBackgroundTask = () => {
     backgroundCheckInterval = undefined;
     console.log('Background task stopped');
   }
+  isBackgroundTaskActive = false;
 };
 
 const checkSignalsInBackground = async () => {
@@ -150,4 +161,11 @@ export const scheduleAllSignalNotifications = async (signals: Signal[]) => {
   } catch (error) {
     console.error('Failed to schedule signal notifications:', error);
   }
+};
+
+export const getBackgroundTaskStatus = () => {
+  return {
+    isActive: isBackgroundTaskActive,
+    hasInterval: !!backgroundCheckInterval
+  };
 };
