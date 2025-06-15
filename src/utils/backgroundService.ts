@@ -1,64 +1,62 @@
-
 import { App } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage } from './signalStorage';
+import { playCustomRingtoneBackground } from './audioUtils';
 
 class BackgroundService {
   private notificationIds: number[] = [];
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
   private isAppActive = true;
+  private customRingtone: string | null = null;
 
   async initialize() {
     try {
-      // Request all necessary permissions
+      console.log('🚀 Initializing background service');
       await this.requestPermissions();
-      
-      // Set up app state listeners
       await this.setupAppStateListeners();
-      
-      console.log('Background service initialized successfully');
+      console.log('🚀 Background service initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize background service:', error);
+      console.error('🚀 Failed to initialize background service:', error);
     }
+  }
+
+  setCustomRingtone(ringtone: string | null) {
+    console.log('🚀 Background service custom ringtone set:', ringtone ? 'custom file' : 'null');
+    this.customRingtone = ringtone;
   }
 
   private async requestPermissions() {
     try {
-      // Request notification permissions
+      console.log('🚀 Requesting permissions');
       const notificationPermission = await LocalNotifications.requestPermissions();
-      console.log('Notification permission status:', notificationPermission);
+      console.log('🚀 Notification permission status:', notificationPermission);
     } catch (error) {
-      console.error('Error requesting permissions:', error);
+      console.error('🚀 Error requesting permissions:', error);
     }
   }
 
   private async setupAppStateListeners() {
-    // Listen for app state changes
+    console.log('🚀 Setting up app state listeners');
+    
     App.addListener('appStateChange', ({ isActive }) => {
-      console.log('App state changed. Active:', isActive);
+      console.log('🚀 App state changed. Active:', isActive);
       this.isAppActive = isActive;
       
       if (!isActive) {
-        // App moved to background - start more aggressive monitoring
+        console.log('🚀 App moved to background - starting aggressive monitoring');
         this.startBackgroundMonitoring();
       } else {
-        // App came to foreground - can rely on normal timers
+        console.log('🚀 App came to foreground - stopping background monitoring');
         this.stopBackgroundMonitoring();
       }
     });
 
-    // Listen for notification actions
     LocalNotifications.addListener('localNotificationActionPerformed', 
       async (notification) => {
-        console.log('Notification action performed:', notification);
-        
-        // Vibrate when notification is tapped
+        console.log('🚀 Notification action performed:', notification);
         await this.triggerHapticFeedback();
-        
-        // Bring app to foreground
-        console.log('Opening app from notification');
       }
     );
   }
@@ -68,19 +66,17 @@ class BackgroundService {
       clearInterval(this.backgroundCheckInterval);
     }
 
-    // Check signals every second in background
+    console.log('🚀 Starting background monitoring with 1-second intervals');
     this.backgroundCheckInterval = setInterval(async () => {
       await this.checkSignalsInBackground();
     }, 1000);
-    
-    console.log('Background monitoring started');
   }
 
   private stopBackgroundMonitoring() {
     if (this.backgroundCheckInterval) {
       clearInterval(this.backgroundCheckInterval);
       this.backgroundCheckInterval = null;
-      console.log('Background monitoring stopped');
+      console.log('🚀 Background monitoring stopped');
     }
   }
 
@@ -92,18 +88,31 @@ class BackgroundService {
       if (!signals || signals.length === 0) return;
 
       const now = new Date();
+      console.log('🚀 Background check at:', now.toLocaleTimeString(), 'for', signals.length, 'signals');
       
       for (const signal of signals) {
         if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
+          console.log('🚀 Signal should trigger in background:', signal);
           await this.triggerBackgroundNotification(signal);
+          await this.playBackgroundAudio(signal);
           
-          // Mark signal as triggered
           signal.triggered = true;
-          console.log('Signal triggered in background:', signal);
+          console.log('🚀 Signal marked as triggered in background:', signal);
         }
       }
     } catch (error) {
-      console.error('Error checking signals in background:', error);
+      console.error('🚀 Error checking signals in background:', error);
+    }
+  }
+
+  private async playBackgroundAudio(signal: Signal) {
+    try {
+      console.log('🚀 Playing background audio for signal:', signal);
+      console.log('🚀 Using custom ringtone:', this.customRingtone ? 'yes' : 'no');
+      
+      await playCustomRingtoneBackground(this.customRingtone);
+    } catch (error) {
+      console.error('🚀 Error playing background audio:', error);
     }
   }
 
@@ -114,18 +123,26 @@ class BackgroundService {
     const signalDate = new Date();
     signalDate.setHours(signalHours, signalMinutes, 0, 0);
     
-    // Subtract antidelay seconds
     const targetTime = new Date(signalDate.getTime() - (antidelaySeconds * 1000));
-    
-    // Check if current time matches target time (within 1 second tolerance)
     const timeDiff = Math.abs(now.getTime() - targetTime.getTime());
-    return timeDiff < 1000;
+    
+    const shouldTrigger = timeDiff < 1000;
+    if (shouldTrigger) {
+      console.log('🚀 Signal timing check - should trigger:', signal.timestamp);
+      console.log('🚀 Target time:', targetTime.toLocaleTimeString());
+      console.log('🚀 Current time:', now.toLocaleTimeString());
+      console.log('🚀 Time diff (ms):', timeDiff);
+    }
+    
+    return shouldTrigger;
   }
 
   private async triggerBackgroundNotification(signal: Signal) {
     try {
       const notificationId = Date.now();
       this.notificationIds.push(notificationId);
+
+      console.log('🚀 Scheduling background notification for signal:', signal);
 
       await LocalNotifications.schedule({
         notifications: [
@@ -145,20 +162,18 @@ class BackgroundService {
         ]
       });
 
-      // Trigger haptic feedback
       await this.triggerHapticFeedback();
-      
-      console.log('Background notification scheduled for signal:', signal);
+      console.log('🚀 Background notification scheduled successfully');
     } catch (error) {
-      console.error('Failed to schedule background notification:', error);
+      console.error('🚀 Failed to schedule background notification:', error);
     }
   }
 
   private async triggerHapticFeedback() {
     try {
+      console.log('🚀 Triggering haptic feedback');
       await Haptics.impact({ style: ImpactStyle.Heavy });
       
-      // Additional vibration pattern
       setTimeout(async () => {
         await Haptics.impact({ style: ImpactStyle.Medium });
       }, 200);
@@ -167,17 +182,18 @@ class BackgroundService {
         await Haptics.impact({ style: ImpactStyle.Heavy });
       }, 400);
     } catch (error) {
-      console.error('Error triggering haptic feedback:', error);
+      console.error('🚀 Error triggering haptic feedback:', error);
     }
   }
 
   async scheduleAllSignals(signals: Signal[]) {
     try {
-      // Cancel existing scheduled notifications
       await this.cancelAllScheduledNotifications();
       
       const antidelaySeconds = loadAntidelayFromStorage();
       const now = new Date();
+      
+      console.log('🚀 Scheduling', signals.length, 'signals with antidelay:', antidelaySeconds);
       
       const notifications = signals
         .filter(signal => !signal.triggered)
@@ -186,13 +202,13 @@ class BackgroundService {
           const signalTime = new Date();
           signalTime.setHours(hours, minutes, 0, 0);
           
-          // Subtract antidelay seconds
           const notificationTime = new Date(signalTime.getTime() - (antidelaySeconds * 1000));
           
-          // Only schedule if notification time is in the future
           if (notificationTime > now) {
             const notificationId = 1000 + index;
             this.notificationIds.push(notificationId);
+            
+            console.log('🚀 Scheduling advance notification for:', signal.timestamp, 'at:', notificationTime.toLocaleTimeString());
             
             return {
               title: '🚨 Binary Options Signal Alert!',
@@ -215,10 +231,10 @@ class BackgroundService {
         await LocalNotifications.schedule({
           notifications: notifications as any[]
         });
-        console.log(`Scheduled ${notifications.length} advance notifications`);
+        console.log('🚀 Scheduled', notifications.length, 'advance notifications');
       }
     } catch (error) {
-      console.error('Failed to schedule advance notifications:', error);
+      console.error('🚀 Failed to schedule advance notifications:', error);
     }
   }
 
@@ -229,10 +245,10 @@ class BackgroundService {
           notifications: this.notificationIds.map(id => ({ id }))
         });
         this.notificationIds = [];
-        console.log('Cancelled all scheduled notifications');
+        console.log('🚀 Cancelled all scheduled notifications');
       }
     } catch (error) {
-      console.error('Error cancelling notifications:', error);
+      console.error('🚀 Error cancelling notifications:', error);
     }
   }
 
@@ -240,9 +256,9 @@ class BackgroundService {
     try {
       this.stopBackgroundMonitoring();
       await this.cancelAllScheduledNotifications();
-      console.log('Background service cleaned up');
+      console.log('🚀 Background service cleaned up');
     } catch (error) {
-      console.error('Error cleaning up background service:', error);
+      console.error('🚀 Error cleaning up background service:', error);
     }
   }
 }

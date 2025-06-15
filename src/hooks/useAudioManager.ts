@@ -1,5 +1,6 @@
 
 import { useState, useEffect, useRef } from 'react';
+import { backgroundService } from '@/utils/backgroundService';
 
 export const useAudioManager = () => {
   const [customRingtone, setCustomRingtone] = useState<string | null>(null);
@@ -7,11 +8,11 @@ export const useAudioManager = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    console.log('Audio Manager - useDefault:', useDefault, 'customRingtone:', customRingtone);
+    console.log('🎵 Audio Manager - useDefault:', useDefault, 'customRingtone:', customRingtone ? 'set' : 'null');
   }, [useDefault, customRingtone]);
 
   useEffect(() => {
-    // Create hidden file input for ringtone selection
+    console.log('🎵 Audio Manager - Setting up file input');
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'audio/*';
@@ -27,37 +28,43 @@ export const useAudioManager = () => {
     };
   }, []);
 
+  // Sync with background service whenever the effective ringtone changes
+  useEffect(() => {
+    const effectiveRingtone = useDefault ? null : customRingtone;
+    console.log('🎵 Audio Manager - Syncing with background service:', effectiveRingtone ? 'custom' : 'default');
+    backgroundService.setCustomRingtone(effectiveRingtone);
+  }, [useDefault, customRingtone]);
+
   const handleRingtoneSelect = (event: Event) => {
     const target = event.target as HTMLInputElement;
     const file = target.files?.[0];
     
     if (file) {
       const url = URL.createObjectURL(file);
-      console.log('Custom ringtone selected:', file.name, 'URL:', url);
+      console.log('🎵 Custom ringtone selected:', file.name, 'URL:', url);
       setCustomRingtone(url);
       setUseDefault(false);
-      console.log('Audio Manager - After selection - useDefault:', false, 'customRingtone set');
+      console.log('🎵 Audio Manager - After selection - useDefault:', false, 'customRingtone set');
     }
   };
 
   const triggerRingtoneSelection = () => {
-    console.log('Triggering ringtone selection dialog');
+    console.log('🎵 Triggering ringtone selection dialog');
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
 
   const setUseDefaultSound = () => {
-    console.log('Setting to use default sound');
+    console.log('🎵 Setting to use default sound');
     setUseDefault(true);
     setCustomRingtone(null);
-    console.log('Audio Manager - After default selection - useDefault:', true, 'customRingtone:', null);
+    console.log('🎵 Audio Manager - After default selection - useDefault:', true, 'customRingtone:', null);
   };
 
-  // Fix the logic: return the actual customRingtone when useDefault is false
   const effectiveRingtone = useDefault ? null : customRingtone;
   
-  console.log('Audio Manager - Returning effectiveRingtone:', effectiveRingtone, 'based on useDefault:', useDefault);
+  console.log('🎵 Audio Manager - Returning effectiveRingtone:', effectiveRingtone ? 'custom' : 'default', 'based on useDefault:', useDefault);
 
   return {
     customRingtone: effectiveRingtone,

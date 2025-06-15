@@ -21,58 +21,59 @@ export const useRingManager = (
   const audioInstancesRef = useRef<HTMLAudioElement[]>([]);
   const audioContextsRef = useRef<AudioContext[]>([]);
 
-  console.log('useRingManager - Current customRingtone:', customRingtone);
+  console.log('🔔 useRingManager - Current customRingtone:', customRingtone ? 'custom' : 'default');
 
-  // Reset triggered signals when savedSignals change (new signals loaded)
   useEffect(() => {
     setTriggeredSignals(new Set());
+    console.log('🔔 Ring Manager - Reset triggered signals for new signal set');
   }, [savedSignals]);
 
-  // Ring notification
   const triggerRing = async (signal: Signal, currentCustomRingtone: string | null) => {
     const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
     
-    // Check if this specific signal has already been triggered this session
     if (triggeredSignals.has(signalKey) || signal.triggered) {
-      return; // Don't trigger again
+      console.log('🔔 Signal already triggered, skipping:', signalKey);
+      return;
     }
 
-    console.log('Triggering ring for signal:', signal, 'with customRingtone:', currentCustomRingtone);
+    console.log('🔔 Triggering ring for signal:', signal, 'with customRingtone:', currentCustomRingtone ? 'custom' : 'default');
+    console.log('🔔 Document visibility state:', document.visibilityState);
+    console.log('🔔 Page hidden:', document.hidden);
     
-    // Mark this signal as triggered in our local set
     setTriggeredSignals(prev => new Set(prev).add(signalKey));
-    
     setIsRinging(true);
     setCurrentRingingSignal(signal);
     
-    // Wake up screen if supported
     const lock = await requestWakeLock();
     setWakeLock(lock);
 
-    // Wake up screen on mobile by trying to focus the window
     if (document.hidden) {
+      console.log('🔔 Page is hidden, trying to focus window');
       window.focus();
     }
 
-    // Play custom ringtone or default beep and track audio instances
-    const audio = await playCustomRingtone(currentCustomRingtone, audioContextsRef);
-    if (audio instanceof HTMLAudioElement) {
-      audioInstancesRef.current.push(audio);
-      
-      // Auto-stop after 10 seconds to prevent infinite loop
-      setTimeout(() => {
-        if (audio && !audio.paused) {
-          audio.pause();
-          audio.currentTime = 0;
-        }
-      }, 10000);
+    try {
+      const audio = await playCustomRingtone(currentCustomRingtone, audioContextsRef);
+      if (audio instanceof HTMLAudioElement) {
+        audioInstancesRef.current.push(audio);
+        console.log('🔔 Audio instance added, total instances:', audioInstancesRef.current.length);
+        
+        setTimeout(() => {
+          if (audio && !audio.paused) {
+            console.log('🔔 Auto-stopping audio after 10 seconds');
+            audio.pause();
+            audio.currentTime = 0;
+          }
+        }, 10000);
+      }
+    } catch (error) {
+      console.error('🔔 Error playing ringtone:', error);
     }
 
-    // Mark signal as triggered in the main state
     onSignalTriggered(signal);
     
-    // Auto-stop ringing after 10 seconds
     setTimeout(() => {
+      console.log('🔔 Auto-stopping ring after 10 seconds');
       setIsRinging(false);
       setCurrentRingingSignal(null);
       releaseWakeLock(wakeLock);
@@ -80,14 +81,18 @@ export const useRingManager = (
     }, 10000);
   };
 
-  // Check signals every second for precise timing
   useEffect(() => {
     if (savedSignals.length > 0) {
+      console.log('🔔 Setting up signal checking interval for', savedSignals.length, 'signals');
+      
       intervalRef.current = setInterval(() => {
+        const now = new Date();
+        
         savedSignals.forEach(signal => {
           if (checkSignalTime(signal, antidelaySeconds) && !signal.triggered) {
             const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
             if (!triggeredSignals.has(signalKey)) {
+              console.log('🔔 Signal time matched, triggering ring:', signal.timestamp);
               triggerRing(signal, customRingtone);
             }
           }
@@ -97,46 +102,47 @@ export const useRingManager = (
       return () => {
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
+          console.log('🔔 Signal checking interval cleared');
         }
       };
     }
   }, [savedSignals, customRingtone, antidelaySeconds, triggeredSignals]);
 
-  // Ring off button handler - stops ALL audio immediately
   const handleRingOff = () => {
+    console.log('🔔 Ring off button pressed - stopping all audio');
     setRingOffButtonPressed(true);
     setTimeout(() => setRingOffButtonPressed(false), 200);
     
-    // Stop ALL audio instances immediately
-    audioInstancesRef.current.forEach(audio => {
+    audioInstancesRef.current.forEach((audio, index) => {
       if (audio) {
+        console.log('🔔 Stopping audio instance', index);
         audio.pause();
         audio.currentTime = 0;
       }
     });
     audioInstancesRef.current = [];
     
-    // Stop ALL Web Audio API contexts
-    audioContextsRef.current.forEach(context => {
+    audioContextsRef.current.forEach((context, index) => {
       if (context && context.state !== 'closed') {
-        context.close().catch(err => console.log('Audio context cleanup error:', err));
+        console.log('🔔 Closing audio context', index);
+        context.close().catch(err => console.log('🔔 Audio context cleanup error:', err));
       }
     });
     audioContextsRef.current = [];
     
-    // Additional cleanup: Stop any remaining audio elements on the page
     const allAudioElements = document.querySelectorAll('audio');
     allAudioElements.forEach(audio => {
       audio.pause();
       audio.currentTime = 0;
     });
+    console.log('🔔 Stopped all page audio elements:', allAudioElements.length);
     
-    // Stop ringing if currently ringing
     if (isRinging) {
       setIsRinging(false);
       setCurrentRingingSignal(null);
       releaseWakeLock(wakeLock);
       setWakeLock(null);
+      console.log('🔔 Ring state cleared');
     }
   };
 
