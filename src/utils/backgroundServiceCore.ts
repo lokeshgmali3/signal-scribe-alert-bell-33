@@ -92,17 +92,15 @@ export class BackgroundServiceCore {
     this.cleanupListeners();
     
     try {
+      // Handle transitions but don't stop background monitoring when foregrounded!
       const appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
         console.log('🚀 App state changed. Active:', isActive, 'Instance:', this.instanceId);
         this.isAppActive = isActive;
-        
-        if (!isActive) {
-          console.log('🚀 App moved to background - attempting to start monitoring');
-          this.monitoringManager.startBackgroundMonitoring();
-        } else {
-          console.log('🚀 App came to foreground - stopping monitoring');
-          this.monitoringManager.stopBackgroundMonitoring();
-        }
+
+        // PERSISTENT: Do NOT stop monitoring when app is foregrounded
+        // Only one manager is ever running due to global lock
+
+        // Buffer any signals if in-app transitions cause drift (future improvement: see recovery mechanism)
       });
 
       const notificationListener = await LocalNotifications.addListener('localNotificationActionPerformed', 

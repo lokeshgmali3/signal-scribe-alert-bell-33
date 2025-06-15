@@ -23,6 +23,13 @@ export class BackgroundMonitoringManager {
   };
   private signalsListenerRegistered: boolean = false;
 
+  // Tolerance for trigger (seconds)
+  private static readonly SIGNAL_TRIGGER_WINDOW_MS = 3000; // 3 seconds
+
+  private lastCheckTime: number | null = null;
+  private throttleDetected: boolean = false;
+  private driftAccumMs: number = 0;
+
   constructor(
     instanceId: string,
     notificationManager: BackgroundNotificationManager,
@@ -89,8 +96,27 @@ export class BackgroundMonitoringManager {
     // Initial cache load always
     this.initCache();
 
+    // ← Make monitoring persistent. Do NOT stop in foreground.
+
     console.log('🚀 Starting background monitoring for instance:', this.instanceId);
+    // Store the last interval timestamp to detect throttling/drift
+    this.lastCheckTime = null;
+    this.throttleDetected = false;
+    this.driftAccumMs = 0;
+
     this.backgroundCheckInterval = setInterval(async () => {
+      const now = Date.now();
+      if (this.lastCheckTime !== null) {
+        const elapsed = now - this.lastCheckTime;
+        if (elapsed > 1500) {
+          // Browser likely throttled this timer; report (for debug only)
+          this.throttleDetected = true;
+          this.driftAccumMs += elapsed - 1000;
+          console.warn(`[Monitor] Timer drift/throttle detected! Interval ms:`, elapsed, 'Total drift:', this.driftAccumMs);
+        }
+      }
+      this.lastCheckTime = now;
+
       if (globalBackgroundManager.getStatus().activeInstanceId !== this.instanceId) {
         console.warn(
           `⛔ [${this.instanceId}] Not owning monitoring. Interval auto-clearing. Current owner: ${globalBackgroundManager.getStatus().activeInstanceId}`
@@ -98,9 +124,8 @@ export class BackgroundMonitoringManager {
         this.stopBackgroundMonitoring();
         return;
       }
-      // Use only cached signals!
       await this.checkSignalsInBackground();
-    }, 1000);
+    }, 1000); // Keep a 1s base tick; the window adjustment is in trigger logic below
   }
 
   stopBackgroundMonitoring() {
@@ -156,7 +181,7 @@ export class BackgroundMonitoringManager {
     }
   }
 
-  // IMPORTANT: Use only the cache!
+  // Use an expanded trigger window and log if miss
   private async checkSignalsInBackground() {
     try {
       this.metrics.cacheHits++;
@@ -167,7 +192,6 @@ export class BackgroundMonitoringManager {
       const antidelaySeconds = loadAntidelayFromStorage();
       const now = new Date();
 
-      // Track which signals actually need to be updated
       const signalsToTrigger: Signal[] = [];
 
       for (const signal of signals) {
@@ -178,8 +202,10 @@ export class BackgroundMonitoringManager {
           if (this.signalProcessingLock.has(signalKey)) {
             continue;
           }
-
-          if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
+          if (
+            this.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, now) &&
+            !signal.triggered
+          ) {
             this.signalProcessingLock.add(signalKey);
             this.metrics.signalTriggers++;
             console.log('🚀 Signal should trigger in background:', signal);
@@ -187,7 +213,6 @@ export class BackgroundMonitoringManager {
             await this.notificationManager.triggerBackgroundNotification(signal);
             await this.audioManager.playBackgroundAudio(signal);
 
-            // Add to trigger queue (so we only update what is needed)
             signalsToTrigger.push(signal);
 
             setTimeout(() => {
@@ -209,6 +234,42 @@ export class BackgroundMonitoringManager {
     } catch (error) {
       console.error('🚀 Error checking signals in background:', error);
     }
+  }
+
+  // Expanded trigger window with drift/tolerance (primary change for reliability)
+  private shouldTriggerSignalWithTolerance(signal: Signal, antidelaySeconds: number, now: Date): boolean {
+    if (signal.triggered) return false;
+
+    // Parse time and create date objects
+    const [signalHours, signalMinutes] = signal.timestamp.split(':').map(Number);
+    const signalDate = new Date(now);
+    signalDate.setHours(signalHours, signalMinutes, 0, 0);
+
+    // Subtract antidelay
+    const targetTime = new Date(signalDate.getTime() - antidelaySeconds * 1000);
+
+    // Handle hour boundary wrap-around robustly
+    if (
+      signalDate.getHours() !== signalHours ||
+      isNaN(signalHours) || isNaN(signalMinutes)
+    ) {
+      // Error parsing signal, skip triggering
+      return false;
+    }
+
+    // DRIFT WINDOW: Use ABS diff to allow for delayed ticks and throttling
+    const diff = Math.abs(now.getTime() - targetTime.getTime());
+    if (diff < BackgroundMonitoringManager.SIGNAL_TRIGGER_WINDOW_MS) {
+      return true;
+    }
+
+    // Optional: drift detection for debug
+    if (diff < 30_000 && !signal.triggered) {
+      // If within 30s but outside trigger window, log that the window was missed due to drift
+      // (could be used for missed-signal recovery/future improvement)
+      // console.log(`[Monitor] Missed trigger window for signal`, signal, 'by', diff, 'ms');
+    }
+    return false;
   }
 
   private shouldTriggerSignal(signal: Signal, antidelaySeconds: number, now: Date): boolean {
