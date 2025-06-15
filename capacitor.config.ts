@@ -30,15 +30,6 @@ const config: CapacitorConfig = {
       iconColor: "#488AFF",
       sound: "beep.wav",
     },
-    BackgroundMode: {
-      enabled: true,
-      title: "Signal Tracker Running",
-      text: "Monitoring binary options signals",
-      silent: false,
-      hidden: false,
-      color: "488AFF",
-      resume: true,
-    },
     App: {
       handleLaunchUrl: true,
     },
@@ -49,10 +40,8 @@ const config: CapacitorConfig = {
     webContentsDebuggingEnabled: true,
     permissions: [
       'android.permission.WAKE_LOCK',
-      'android.permission.FOREGROUND_SERVICE',
       'android.permission.VIBRATE',
       'android.permission.RECEIVE_BOOT_COMPLETED',
-      'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.SCHEDULE_EXACT_ALARM',
       'android.permission.USE_EXACT_ALARM',
       'android.permission.POST_NOTIFICATIONS',
@@ -70,7 +59,6 @@ const config: CapacitorConfig = {
       ScrollEnabled: true,
       'ios-plist': {
         UIBackgroundModes: [
-          'background-audio',
           'background-fetch',
           'background-processing'
         ]

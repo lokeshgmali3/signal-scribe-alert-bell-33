@@ -1,5 +1,4 @@
 
-import { BackgroundMode } from '@capacitor-community/background-mode';
 import { App } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -7,9 +6,9 @@ import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage } from './signalStorage';
 
 class BackgroundService {
-  private isBackgroundModeEnabled = false;
   private notificationIds: number[] = [];
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
+  private isAppActive = true;
 
   async initialize() {
     try {
@@ -30,14 +29,6 @@ class BackgroundService {
       // Request notification permissions
       const notificationPermission = await LocalNotifications.requestPermissions();
       console.log('Notification permission status:', notificationPermission);
-
-      // Request background mode permissions if available
-      try {
-        await BackgroundMode.requestPermissions();
-        console.log('Background mode permissions requested');
-      } catch (error) {
-        console.log('Background mode not available or permission denied:', error);
-      }
     } catch (error) {
       console.error('Error requesting permissions:', error);
     }
@@ -47,14 +38,13 @@ class BackgroundService {
     // Listen for app state changes
     App.addListener('appStateChange', ({ isActive }) => {
       console.log('App state changed. Active:', isActive);
+      this.isAppActive = isActive;
       
       if (!isActive) {
-        // App moved to background
-        this.enableBackgroundMode();
+        // App moved to background - start more aggressive monitoring
         this.startBackgroundMonitoring();
       } else {
-        // App came to foreground
-        this.disableBackgroundMode();
+        // App came to foreground - can rely on normal timers
         this.stopBackgroundMonitoring();
       }
     });
@@ -71,30 +61,6 @@ class BackgroundService {
         console.log('Opening app from notification');
       }
     );
-  }
-
-  async enableBackgroundMode() {
-    try {
-      if (!this.isBackgroundModeEnabled) {
-        await BackgroundMode.enable();
-        this.isBackgroundModeEnabled = true;
-        console.log('Background mode enabled');
-      }
-    } catch (error) {
-      console.error('Error enabling background mode:', error);
-    }
-  }
-
-  async disableBackgroundMode() {
-    try {
-      if (this.isBackgroundModeEnabled) {
-        await BackgroundMode.disable();
-        this.isBackgroundModeEnabled = false;
-        console.log('Background mode disabled');
-      }
-    } catch (error) {
-      console.error('Error disabling background mode:', error);
-    }
   }
 
   private startBackgroundMonitoring() {
@@ -273,7 +239,6 @@ class BackgroundService {
   async cleanup() {
     try {
       this.stopBackgroundMonitoring();
-      await this.disableBackgroundMode();
       await this.cancelAllScheduledNotifications();
       console.log('Background service cleaned up');
     } catch (error) {
