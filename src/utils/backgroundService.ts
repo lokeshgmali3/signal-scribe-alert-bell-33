@@ -106,33 +106,37 @@ class BackgroundService {
     // Clean up any existing listeners first
     this.cleanupListeners();
     
-    const appStateListener = App.addListener('appStateChange', ({ isActive }) => {
-      console.log('🚀 App state changed. Active:', isActive, 'Instance:', this.instanceId);
-      this.isAppActive = isActive;
-      
-      if (!isActive) {
-        console.log('🚀 App moved to background - attempting to start monitoring');
-        this.startBackgroundMonitoring();
-      } else {
-        console.log('🚀 App came to foreground - stopping monitoring');
-        this.stopBackgroundMonitoring();
-      }
-    });
+    try {
+      const appStateListener = await App.addListener('appStateChange', ({ isActive }) => {
+        console.log('🚀 App state changed. Active:', isActive, 'Instance:', this.instanceId);
+        this.isAppActive = isActive;
+        
+        if (!isActive) {
+          console.log('🚀 App moved to background - attempting to start monitoring');
+          this.startBackgroundMonitoring();
+        } else {
+          console.log('🚀 App came to foreground - stopping monitoring');
+          this.stopBackgroundMonitoring();
+        }
+      });
 
-    const notificationListener = LocalNotifications.addListener('localNotificationActionPerformed', 
-      async (notification) => {
-        console.log('🚀 Notification action performed:', notification);
-        await this.triggerHapticFeedback();
-      }
-    );
+      const notificationListener = await LocalNotifications.addListener('localNotificationActionPerformed', 
+        async (notification) => {
+          console.log('🚀 Notification action performed:', notification);
+          await this.triggerHapticFeedback();
+        }
+      );
 
-    this.listenerCleanupFunctions.push(
-      () => appStateListener.remove(),
-      () => notificationListener.remove()
-    );
+      this.listenerCleanupFunctions.push(
+        () => appStateListener.remove(),
+        () => notificationListener.remove()
+      );
 
-    globalBackgroundManager.addListener();
-    globalBackgroundManager.addListener(); // One for each listener
+      globalBackgroundManager.addListener();
+      globalBackgroundManager.addListener(); // One for each listener
+    } catch (error) {
+      console.error('🚀 Error setting up app state listeners:', error);
+    }
   }
 
   private cleanupListeners() {
