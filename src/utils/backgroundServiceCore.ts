@@ -40,6 +40,18 @@ export class BackgroundServiceCore {
         this.appStateListenerInitialized = true;
       }
       
+      // Android-specific: Optionally start background reliability enhancements
+      if (this.isAndroidPlatform()) {
+        this.requestBatteryOptimizationBypass();
+        this.startForegroundServiceNotification();
+      }
+
+      // Start background monitoring manager on init
+      this.monitoringManager.startBackgroundMonitoring();
+
+      // Output debug info
+      this.debugBackgroundStatus();
+      
       console.log('🚀 Background service initialized successfully');
     } catch (error) {
       console.error('🚀 Failed to initialize background service:', error);
@@ -202,27 +214,38 @@ export class BackgroundServiceCore {
     );
   }
 
-  // Example usage points in your code, can be called from setup/init:
-  async initialize() {
-    try {
-      console.log('🚀 Initializing background service instance:', this.instanceId);
-      await this.notificationManager.requestPermissions();
-      
-      if (!this.appStateListenerInitialized) {
-        await this.setupAppStateListeners();
-        this.appStateListenerInitialized = true;
-      }
-      
-      // Optionally trigger the battery optimization prompt and persistent notification at launch:
-      if (this.isAndroidPlatform()) {
-        this.requestBatteryOptimizationBypass();
-        this.startForegroundServiceNotification();
-      }
-      
-      console.log('🚀 Background service initialized successfully');
-    } catch (error) {
-      console.error('🚀 Failed to initialize background service:', error);
+  /**
+   * Battery optimization detection & user guidance
+   */
+  async detectBatteryOptimizationIssue() {
+    // TODO: Implement real detection with plugin/capacitor bridge on Android
+    if (this.isAndroidPlatform()) {
+      console.warn('🚧 [Android-Background] Battery optimization status detection is TODO. Show user tips here.');
+      // Maybe display to user via toast or alert
     }
+  }
+
+  /**
+   * Monitor status and diagnostics for debug view.
+   */
+  debugBackgroundStatus() {
+    const status = {
+      instanceId: this.instanceId,
+      appActive: this.isAppActive,
+      audio: this.audioManager.getAudioInfo(),
+      notifIDs: this.notificationManager.getNotificationIds(),
+      bgMonitorActive: this.monitoringManager.isActive(),
+      // Extra debugging possible (add more fields as needed)
+      globalStatus: globalBackgroundManager.getStatus()
+    };
+    console.log('[DEBUG STATUS] Background service:', status);
+    // For testing: Could expose as window.bgServiceDebug = status;
+    (window as any).bgServiceDebug = status;
+    return status;
+  }
+
+  getStatus() {
+    return this.debugBackgroundStatus();
   }
 
   isAndroidPlatform() {

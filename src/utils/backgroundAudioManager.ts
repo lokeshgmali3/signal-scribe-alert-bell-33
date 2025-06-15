@@ -12,6 +12,11 @@ export class BackgroundAudioManager {
   private customRingtone: string | null = null;
   private cachedAudio: CachedAudio | null = null;
 
+  /**
+   * Track audio "focus" intent (can't guarantee on web, stub/log for native Android-phase integration)
+   */
+  private hasAudioFocus = true;
+
   setCustomRingtone(ringtone: string | null) {
     console.log('🚀 Background service custom ringtone set:', ringtone ? 'custom file' : 'null');
     this.customRingtone = ringtone;
@@ -32,21 +37,42 @@ export class BackgroundAudioManager {
     this.cachedAudio = null;
   }
 
+  /**
+   * Request/abandon "audio focus" for background sound.
+   * (Stub on web/package for native; logs only now.)
+   */
+  async requestAudioFocus() {
+    this.hasAudioFocus = true;
+    console.log('🔊 (Stub) Audio focus requested and granted.');
+  }
+  async abandonAudioFocus() {
+    this.hasAudioFocus = false;
+    console.log('🔊 (Stub) Audio focus abandoned.');
+  }
+
+  /**
+   * Try to play custom sound, fallback to beep if unavailable in background.
+   * Optionally logs audio focus.
+   */
   async playBackgroundAudio(signal?: Signal) {
     try {
       console.log('🚀 Playing background audio for signal:', signal?.timestamp || 'manual trigger');
-      console.log('🚀 Has cached audio:', this.cachedAudio ? 'yes' : 'no');
-      console.log('🚀 Custom ringtone set:', this.customRingtone ? 'yes' : 'no');
-      
+      await this.requestAudioFocus();
+
       if (this.customRingtone && this.cachedAudio) {
         console.log('🚀 Using cached custom audio for background playback');
         await playCustomRingtoneBackground(this.cachedAudio);
       } else {
-        console.log('🚀 No custom audio available, using default beep');
+        console.warn('🚀 No custom ringtone set or cached audio missing, falling back to beep.');
         await playCustomRingtoneBackground(null);
       }
+
+      await this.abandonAudioFocus();
     } catch (error) {
       console.error('🚀 Error playing background audio:', error);
+      // Fallback: Always play beep if anything goes wrong
+      await playCustomRingtoneBackground(null);
+      await this.abandonAudioFocus();
     }
   }
 
@@ -62,3 +88,4 @@ export class BackgroundAudioManager {
     };
   }
 }
+
