@@ -1,5 +1,5 @@
 
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 
 // Use a global variable in the window to coordinate between foreground and background.
 // This triggers across hooks and contexts in the current tab/app.

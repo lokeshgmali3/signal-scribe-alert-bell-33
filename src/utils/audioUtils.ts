@@ -1,3 +1,11 @@
+
+// Add global declaration for window.__unlockedAudioContext
+declare global {
+  interface Window {
+    __unlockedAudioContext?: AudioContext;
+  }
+}
+
 export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioContext[]>) => {
   console.log('🔊 Creating default beep audio');
   // Handle Chrome/Safari audio unlock by user gesture
