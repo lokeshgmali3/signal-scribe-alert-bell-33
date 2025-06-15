@@ -25,27 +25,35 @@ export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioC
   return oscillator;
 };
 
-export const playCustomRingtoneBackground = async (customRingtone: string | null): Promise<void> => {
-  console.log('🔊 playCustomRingtoneBackground called with:', customRingtone ? 'custom file' : 'null');
+export const playCustomRingtoneBackground = async (audioData: { base64: string; mimeType: string } | null): Promise<void> => {
+  console.log('🔊 playCustomRingtoneBackground called with audio data:', audioData ? 'present' : 'null');
   
-  if (!customRingtone) {
-    console.log('🔊 No custom ringtone, creating default beep for background');
+  if (!audioData) {
+    console.log('🔊 No custom audio data, creating default beep for background');
     createBeepAudio();
     return;
   }
 
   try {
-    console.log('🔊 Attempting to play custom ringtone in background mode');
+    console.log('🔊 Attempting to play custom audio in background mode using Web Audio API');
+    console.log('🔊 Audio data - base64 length:', audioData.base64.length, 'mime type:', audioData.mimeType);
     
-    // Try to use Web Audio API for better background compatibility
+    // Create audio context
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    console.log('🔊 Audio context created, state:', audioContext.state);
     
-    // Fetch the audio file and decode it
-    const response = await fetch(customRingtone);
-    const arrayBuffer = await response.arrayBuffer();
+    // Convert base64 to ArrayBuffer
+    const binaryString = atob(audioData.base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const arrayBuffer = bytes.buffer;
+    console.log('🔊 Converted base64 to ArrayBuffer, size:', arrayBuffer.byteLength, 'bytes');
+    
+    // Decode audio data
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    
-    console.log('🔊 Audio file decoded successfully, duration:', audioBuffer.duration);
+    console.log('🔊 Audio file decoded successfully, duration:', audioBuffer.duration, 'seconds');
     
     // Create source and play
     const source = audioContext.createBufferSource();
@@ -57,21 +65,21 @@ export const playCustomRingtoneBackground = async (customRingtone: string | null
     gainNode.gain.value = 0.8;
     
     source.start();
-    console.log('🔊 Custom ringtone started playing via Web Audio API');
+    console.log('🔊 Custom ringtone started playing via Web Audio API in background');
     
     // Auto-stop after 10 seconds
     setTimeout(() => {
       try {
         source.stop();
         audioContext.close();
-        console.log('🔊 Custom ringtone stopped and context closed');
+        console.log('🔊 Custom ringtone stopped and context closed after timeout');
       } catch (err) {
         console.log('🔊 Error stopping custom ringtone:', err);
       }
     }, 10000);
     
   } catch (error) {
-    console.log('🔊 Error playing custom ringtone in background, falling back to beep:', error);
+    console.error('🔊 Error playing custom ringtone in background, falling back to beep:', error);
     createBeepAudio();
   }
 };
@@ -85,10 +93,13 @@ export const playCustomRingtone = (customRingtone: string | null, audioContextsR
     if (customRingtone) {
       console.log('🔊 Playing custom ringtone:', customRingtone);
       
-      // If page is hidden, use background-compatible method
+      // If page is hidden, use background-compatible method with cached audio
       if (document.hidden) {
-        console.log('🔊 Page is hidden, using background-compatible audio');
-        playCustomRingtoneBackground(customRingtone).then(() => resolve(null));
+        console.log('🔊 Page is hidden, requesting background audio from background service');
+        // Background service will handle this via cached audio
+        import('../utils/backgroundService').then(({ backgroundService }) => {
+          backgroundService.playBackgroundAudio().then(() => resolve(null));
+        });
         return;
       }
       
