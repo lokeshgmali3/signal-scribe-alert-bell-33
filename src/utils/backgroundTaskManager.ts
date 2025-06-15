@@ -36,6 +36,14 @@ export const startBackgroundTask = async () => {
     console.log('Background task started - using hybrid monitoring with ID:', taskInstanceId);
     
     backgroundCheckInterval = setInterval(async () => {
+      // KEY: Exit if this instance no longer owns the monitoring slot.
+      const status = globalBackgroundManager.getStatus();
+      if (status.activeInstanceId !== taskInstanceId) {
+        // Not the owner anymore!
+        console.warn(`[WEB] This background task instance (${taskInstanceId}) no longer owns monitoring, clearing interval. Active: ${status.activeInstanceId}`);
+        stopBackgroundTask();
+        return;
+      }
       await checkSignalsInBackground();
     }, 1000);
 

@@ -26,23 +26,31 @@ class GlobalBackgroundManager {
       console.log('🌍 Global: Background monitoring started by instance:', instanceId);
       return true;
     }
-    
     if (this.activeInstanceId === instanceId) {
+      // Already started by this instance
       console.log('🌍 Global: Instance already owns background monitoring:', instanceId);
       return true;
     }
-    
-    console.log('🌍 Global: Background monitoring blocked for instance:', instanceId, 'active instance:', this.activeInstanceId);
+    // Block all other attempts
+    console.warn(
+      '🌍 Global: Background monitoring BLOCKED. Already owned by:',
+      this.activeInstanceId, 'Attempted by:', instanceId
+    );
     return false;
   }
 
+  // This method is now more robust: always clears ownership for stopped instance
   stopBackgroundMonitoring(instanceId: string): void {
     if (this.activeInstanceId === instanceId) {
       this.isBackgroundMonitoringActive = false;
       this.activeInstanceId = null;
       console.log('🌍 Global: Background monitoring stopped by instance:', instanceId);
     } else {
-      console.log('🌍 Global: Stop request ignored from non-owner instance:', instanceId);
+      // A different instance tried to stop monitoring: no effect.
+      console.warn(
+        '🌍 Global: Stop request ignored from non-owner instance:',
+        instanceId, 'Current owner:', this.activeInstanceId
+      );
     }
   }
 
@@ -85,3 +93,4 @@ class GlobalBackgroundManager {
 }
 
 export const globalBackgroundManager = GlobalBackgroundManager.getInstance();
+

@@ -1,4 +1,3 @@
-
 import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
 import { globalBackgroundManager } from './globalBackgroundManager';
@@ -23,18 +22,28 @@ export class BackgroundMonitoringManager {
   }
 
   startBackgroundMonitoring() {
+    // Add an immediate ownership check before starting the interval
     if (!globalBackgroundManager.canStartBackgroundMonitoring(this.instanceId)) {
-      console.log('🚀 Background monitoring blocked by global manager');
+      console.log('🚀 Background monitoring blocked by global manager for instance:', this.instanceId);
       return;
     }
 
     if (this.backgroundCheckInterval) {
-      console.log('🚀 Background monitoring already active for this instance');
+      console.log('🚀 Background monitoring already active for this instance:', this.instanceId);
       return;
     }
 
     console.log('🚀 Starting background monitoring for instance:', this.instanceId);
     this.backgroundCheckInterval = setInterval(async () => {
+      // NEW: Check if still the rightful instance before running the loop.
+      if (globalBackgroundManager.getStatus().activeInstanceId !== this.instanceId) {
+        // Not my turn anymore; self-terminate this interval!
+        console.warn(
+          `⛔ [${this.instanceId}] Not owning monitoring. Interval auto-clearing. Current owner: ${globalBackgroundManager.getStatus().activeInstanceId}`
+        );
+        this.stopBackgroundMonitoring();
+        return;
+      }
       await this.checkSignalsInBackground();
     }, 1000);
   }
