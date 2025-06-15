@@ -1,9 +1,9 @@
+
 import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useNotificationPermission } from "@/hooks/useNotificationPermission";
 
-// For direct Chrome site settings link:
 function getChromeSiteSettingsUrl(): string | null {
   if (typeof window === "undefined") return null;
   const origin = window.location.origin;
@@ -29,7 +29,6 @@ export default function NotificationPermissionPopup() {
   const [testNotifStatus, setTestNotifStatus] = useState<null | "ok" | "fail" | "pending">(null);
   const [testNotifMessage, setTestNotifMessage] = useState<string>("");
 
-  // Show dialog if permission not granted/denied
   React.useEffect(() => {
     if (effectivePermission === "default" || effectivePermission === "denied") {
       setShowDialog(true);
@@ -71,7 +70,6 @@ export default function NotificationPermissionPopup() {
     }
   }
 
-  // Permission (un)block guide for Chrome
   function renderChromePermissionReset() {
     const siteSetUrl = getChromeSiteSettingsUrl();
     return (
@@ -98,11 +96,9 @@ export default function NotificationPermissionPopup() {
   }
 
   function getBrowserHelp() {
-    // If denied and Chrome, show explicit guide:
     if (browser === "Chrome" && effectivePermission === "denied") {
       return renderChromePermissionReset();
     }
-    // ...keep existing help for other browsers...
     if (browser === "IE" || browser === "Edge") {
       return (
         <div className="text-xs text-yellow-900 mt-2">
@@ -160,7 +156,6 @@ export default function NotificationPermissionPopup() {
           size="sm"
           className="mt-2"
           onClick={async () => {
-            console.log("Re-check status clicked");
             await checkPermissions();
           }}
         >
@@ -185,7 +180,6 @@ export default function NotificationPermissionPopup() {
     );
   }
 
-  // Only show modal if permission denied or default
   if (!showDialog) return null;
 
   return (
@@ -216,27 +210,21 @@ export default function NotificationPermissionPopup() {
           <div className="mt-2">
             <Button
               onClick={async () => {
-                console.log("Enable Notifications clicked");
+                // Always try both web/capacitor permissions no matter the status
                 let result: NotificationPermission = "default";
                 try {
-                  // Always attempt permission request (Chrome allows re-prompt only via site settings after denied)
-                  if ("Notification" in window) {
-                    result = await Notification.requestPermission();
-                    setLastPermResult(result);
-                    console.log("Notification.requestPermission result:", result);
-                  }
-                  if ((window as any).Capacitor?.Plugins?.LocalNotifications) {
-                    const capResult = await (window as any).Capacitor.Plugins.LocalNotifications.requestPermissions();
-                    // 'granted', 'denied', 'prompt'
-                    setLastPermResult((capResult?.display as NotificationPermission) ?? result);
-                    console.log("Capacitor.LocalNotifications.requestPermissions result:", capResult);
+                  // Try via custom hook now (unified logic & extra debug)
+                  const reqResult = await requestPermission();
+                  setLastPermResult(reqResult as NotificationPermission);
+                  if (reqResult) {
+                    console.log("Notification.requestPermission unified result:", reqResult);
                   }
                 } catch (err) {
                   setLastPermResult("denied");
                   console.error("Permission request error:", err);
                 }
-                // Always check/refresh
-                setTimeout(() => checkPermissions(), 400);
+                // Always check/refresh immediately after request
+                await checkPermissions();
               }}
               size="sm"
               variant="default"

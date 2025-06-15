@@ -38,7 +38,6 @@ export function useNotificationPermission() {
 
   const checkPermissions = useCallback(async () => {
     let dbg = "";
-
     // Web API
     let webPerm: NotificationPermission | null = null;
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -48,7 +47,6 @@ export function useNotificationPermission() {
     } else {
       dbg += "Web Notification API not available\n";
     }
-
     // Capacitor (optional)
     let capPerm: NotificationPermission | null = null;
     if ((window as any).Capacitor && (window as any).Capacitor.Plugins?.LocalNotifications) {
@@ -87,33 +85,44 @@ export function useNotificationPermission() {
     : capacitorPermission ? capacitorPermission
     : "default";
 
-  // Unified request
+  // Unified request - always try (even if already denied)
   const requestPermission = useCallback(async () => {
-    let success = false;
-    // Try Web Notification API first, then Capacitor as fallback
-    if ("Notification" in window && Notification.permission === "default") {
+    let debugMsg = "";
+    let lastResult: NotificationPermission | null = null;
+    // Always try web Notification.requestPermission
+    if ("Notification" in window) {
       try {
+        debugMsg += "[WEB] Trying Notification.requestPermission...\n";
         const res = await Notification.requestPermission();
         setWebPermission(res);
-        success = res === "granted";
-      } catch (err) {}
+        lastResult = res;
+        debugMsg += `[WEB] requestPermission result: ${res}\n`;
+      } catch (err) {
+        debugMsg += `[WEB] requestPermission failed: ${String(err)}\n`;
+      }
     }
-    if ((window as any).Capacitor && (window as any).Capacitor.Plugins?.LocalNotifications) {
+    // Always try Capacitor if available
+    if ((window as any).Capacitor?.Plugins?.LocalNotifications) {
       try {
-        const result = await (window as any).Capacitor.Plugins.LocalNotifications.requestPermissions();
-        // "granted"/"denied"/"prompt"
-        if (result.display === "granted") {
+        debugMsg += "[CAPACITOR] Trying LocalNotifications.requestPermissions...\n";
+        const capRes = await (window as any).Capacitor.Plugins.LocalNotifications.requestPermissions();
+        if (capRes.display === "granted") {
           setCapacitorPermission("granted");
-          success = true;
-        } else if (result.display === "denied") {
+          lastResult = "granted";
+        } else if (capRes.display === "denied") {
           setCapacitorPermission("denied");
+          lastResult = "denied";
         } else {
           setCapacitorPermission("default");
         }
-      } catch (err) {}
+        debugMsg += `[CAPACITOR] requestPermissions result: ${capRes.display}\n`;
+      } catch (err) {
+        debugMsg += `[CAPACITOR] requestPermissions failed: ${String(err)}\n`;
+      }
     }
-    checkPermissions();
-    return success;
+    setDebug(debugMsg);
+    await checkPermissions(); // Always refresh after attempts
+    return lastResult;
   }, [checkPermissions]);
 
   return {
