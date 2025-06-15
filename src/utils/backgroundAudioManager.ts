@@ -32,7 +32,6 @@ export class BackgroundAudioManager {
   setCustomRingtone(ringtone: string | null) {
     console.log('🚀 Background service custom ringtone set:', ringtone ? 'custom file' : 'null');
     this.customRingtone = ringtone;
-    
     // If setting a custom ringtone, convert it to base64 for background use
     if (ringtone) {
       this.convertRingtoneToBase64(ringtone);
@@ -43,20 +42,20 @@ export class BackgroundAudioManager {
     try {
       const response = await fetch(blobUrl);
       const blob = await response.blob();
-      
+
       return new Promise<void>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64String = reader.result as string;
           const base64Data = base64String.split(',')[1];
-          
+
           this.cachedAudio = {
             base64: base64Data,
             mimeType: blob.type,
             timestamp: Date.now(),
             blobUrl: blobUrl
           };
-          
+
           console.log('🚀 Custom audio converted to base64 for background use');
           resolve();
         };
@@ -86,7 +85,7 @@ export class BackgroundAudioManager {
     this.hasAudioFocus = true;
     console.log('🔊 Audio focus requested and granted.');
   }
-  
+
   async abandonAudioFocus() {
     this.hasAudioFocus = false;
     console.log('🔊 Audio focus abandoned.');
@@ -117,7 +116,14 @@ export class BackgroundAudioManager {
     try {
       console.log('🚀 Playing background audio for signal:', signal?.timestamp || 'manual trigger');
       await this.requestAudioFocus();
-      
+
+      // --- RELIABILITY FIX: (mobile/offscreen) ---
+      // If customRingtone is set but cachedAudio is missing for any reason, re-attempt caching
+      if (this.customRingtone && !(this.cachedAudio && this.cachedAudio.base64)) {
+        console.warn('🚀 Custom ringtone selected but no cached audio found. Re-caching now before playback.');
+        await this.convertRingtoneToBase64(this.customRingtone);
+      }
+
       // Check if we have custom audio data for background playback
       if (this.hasCustomAudio()) {
         console.log('🚀 Using cached custom audio for background playback');
@@ -126,7 +132,7 @@ export class BackgroundAudioManager {
         console.warn('🚀 No custom ringtone cached, falling back to beep.');
         await this.playBeepLoud();
       }
-      
+
       await this.abandonAudioFocus();
     } catch (error) {
       console.error('🚀 Error playing background audio:', error);

@@ -1,4 +1,3 @@
-
 import { Signal } from '@/types/signal';
 import { loadAntidelayFromStorage, saveSignalsToStorage, loadSignalsFromStorage } from './signalStorage'; // <-- Added loadSignalsFromStorage here
 import { globalBackgroundManager } from './globalBackgroundManager';
@@ -49,17 +48,22 @@ export class BackgroundSignalProcessor {
       const now = new Date();
       const signalsToTrigger: Signal[] = [];
 
+      // --- FIX: Track update in memory immediately, not just after atomic trigger/save! ---
       for (const signal of signals) {
         const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
         const acquired = globalSignalProcessingLock.lockSignal(signalKey);
         if (!acquired) continue;
 
         try {
+          // Additional check to make sure we only trigger in-memory-untriggered signals
           if (this.signalProcessingLock.has(signalKey)) {
             continue;
           }
 
           if (this.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, now) && !signal.triggered) {
+            // Mark as triggered immediately in cached/in-memory array,
+            // this blocks retrigger in the next processSignals invocation!
+            signal.triggered = true;
             this.signalProcessingLock.add(signalKey);
             this.signalTriggers++;
             console.log('🚀 Signal should trigger in background:', signal);
