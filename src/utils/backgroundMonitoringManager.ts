@@ -3,7 +3,7 @@ import { loadSignalsFromStorage, loadAntidelayFromStorage, saveSignalsToStorage 
 import { globalBackgroundManager } from './globalBackgroundManager';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
 import { BackgroundAudioManager } from './backgroundAudioManager';
-import { useGlobalSignalProcessingLock } from '@/hooks/useGlobalSignalProcessingLock';
+import { globalSignalProcessingLock } from './globalSignalProcessingLock';
 
 export class BackgroundMonitoringManager {
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
@@ -58,9 +58,6 @@ export class BackgroundMonitoringManager {
     globalBackgroundManager.stopBackgroundMonitoring(this.instanceId);
   }
 
-  // NEW: Add lock funcs
-  private lockFuncs = typeof window !== "undefined" ? require("@/hooks/useGlobalSignalProcessingLock") : null;
-
   private async checkSignalsInBackground() {
     try {
       const signals = await globalBackgroundManager.withStorageLock(() => 
@@ -78,7 +75,7 @@ export class BackgroundMonitoringManager {
       for (const signal of signals) {
         const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
         // Background: Only process if we can acquire the global lock for this signalKey
-        const acquired = this.lockFuncs?.useGlobalSignalProcessingLock()?.lockSignal(signalKey) ?? true; 
+        const acquired = globalSignalProcessingLock.lockSignal(signalKey); 
         if (!acquired) continue;
         try {
           if (this.signalProcessingLock.has(signalKey)) {
@@ -101,7 +98,7 @@ export class BackgroundMonitoringManager {
             }, 2000);
           }
         } finally {
-          this.lockFuncs?.useGlobalSignalProcessingLock()?.unlockSignal(signalKey);
+          globalSignalProcessingLock.unlockSignal(signalKey);
         }
       }
       
