@@ -40,12 +40,13 @@ export const useSignalTracker = () => {
     handleAntidelayCancel
   } = useAntidelayManager(savedSignals, antidelaySeconds, setAntidelaySeconds, audioManager);
 
-  // Re-enable background processing for background service when signals change
+  // Disable all background scheduling and service worker registration
+  // Only keep possible sync on foreground (if relevant; no-op for now)
+
   useEffect(() => {
-    // Sync scheduled notifications with backgroundService if in mobile environment.
-    import('@/utils/backgroundService').then(({ backgroundService }) => {
-      backgroundService.scheduleAllSignals(savedSignals);
-    });
+    // No background processing.
+    // All foreground processing handled by useRingManager.
+    // Buttons and state management preserved.
   }, [savedSignals]);
 
   return {

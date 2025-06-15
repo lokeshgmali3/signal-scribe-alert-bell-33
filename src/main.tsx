@@ -1,42 +1,41 @@
-
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 import { backgroundService } from './utils/backgroundService'
 
 // Initialize background service singleton for native mobile functionality
-backgroundService.initialize().catch(error => {
-  console.error('Failed to initialize background service:', error);
-});
+// backgroundService.initialize().catch(error => {
+//   console.error('Failed to initialize background service:', error);
+// });
 
 // Register service worker for web-based background functionality
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((registration) => {
-        console.log('SW registered: ', registration);
+// if ('serviceWorker' in navigator) {
+//   window.addEventListener('load', () => {
+//     navigator.serviceWorker.register('/sw.js')
+//       .then((registration) => {
+//         console.log('SW registered: ', registration);
         
-        // Register for background sync if supported
-        if ('sync' in registration && registration.sync) {
-          (registration.sync as any).register('signal-check').then(() => {
-            console.log('Background sync registered');
-          }).catch((err) => {
-            console.log('Background sync registration failed:', err);
-          });
-        }
-      })
-      .catch((registrationError) => {
-        console.log('SW registration failed: ', registrationError);
-      });
-  });
-}
+//         // Register for background sync if supported
+//         if ('sync' in registration && registration.sync) {
+//           (registration.sync as any).register('signal-check').then(() => {
+//             console.log('Background sync registered');
+//           }).catch((err) => {
+//             console.log('Background sync registration failed:', err);
+//           });
+//         }
+//       })
+//       .catch((registrationError) => {
+//         console.log('SW registration failed: ', registrationError);
+//       });
+//   });
+// }
 
 // Request notification permission on mobile
-if ('Notification' in window && Notification.permission === 'default') {
-  Notification.requestPermission().then((permission) => {
-    console.log('Notification permission:', permission);
-  });
-}
+// if ('Notification' in window && Notification.permission === 'default') {
+//   Notification.requestPermission().then((permission) => {
+//     console.log('Notification permission:', permission);
+//   });
+// }
 
 // Handle visibility changes for background task management
 document.addEventListener('visibilitychange', () => {
@@ -67,4 +66,3 @@ document.addEventListener('touchend', (event) => {
 }, false);
 
 createRoot(document.getElementById("root")!).render(<App />);
-

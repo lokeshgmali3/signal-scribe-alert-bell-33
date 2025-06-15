@@ -44,21 +44,6 @@ export const useAudioManager = () => {
       setCustomRingtone(blobUrl);
       setUseDefault(false);
       console.log('🎵 Audio Manager - After selection - useDefault:', false, 'customRingtone set');
-
-      // Also cache audio in background service for background ringing
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const result = reader.result as string;
-        const base64data = result.split(',')[1]; // after data:audio/xxx;base64,
-        const mimeType = file.type;
-        try {
-          const { backgroundService } = await import('@/utils/backgroundService');
-          await backgroundService.cacheCustomAudio(base64data, mimeType);
-        } catch (err) {
-          console.log('Background audio caching failed:', err);
-        }
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -70,19 +55,11 @@ export const useAudioManager = () => {
     }
   };
 
-  const setUseDefaultSound = async () => {
+  const setUseDefaultSound = () => {
     console.log('🎵 Setting to use default sound');
     setUseDefault(true);
     setCustomRingtone(null);
     console.log('🎵 Audio Manager - After default selection - useDefault:', true, 'customRingtone:', null);
-
-    // Also clear cached audio in background service
-    try {
-      const { backgroundService } = await import('@/utils/backgroundService');
-      await backgroundService.clearCustomAudio();
-    } catch (err) {
-      console.log('Background audio clearing failed:', err);
-    }
   };
 
   const effectiveRingtone = useDefault ? null : customRingtone;
@@ -95,3 +72,4 @@ export const useAudioManager = () => {
     setUseDefaultSound
   };
 };
+

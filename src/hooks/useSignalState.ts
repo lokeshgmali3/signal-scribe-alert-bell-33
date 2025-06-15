@@ -34,21 +34,13 @@ export const useSignalState = () => {
   }, [antidelaySeconds]);
 
   // Save signals handler
-  const handleSaveSignals = async () => {
+  const handleSaveSignals = () => {
     setSaveButtonPressed(true);
     setTimeout(() => setSaveButtonPressed(false), 200);
     
     const signals = parseSignals(signalsText);
     setSavedSignals(signals);
     saveSignalsToStorage(signals);
-
-    // Schedule background notifications for new signals
-    try {
-      const { backgroundService } = await import('@/utils/backgroundService');
-      await backgroundService.scheduleAllSignals(signals);
-    } catch (e) {
-      console.log('Background scheduling failed (web?):', e);
-    }
   };
 
   const updateSignalTriggered = (signal: Signal) => {
