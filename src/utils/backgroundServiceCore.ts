@@ -6,6 +6,9 @@ import { globalBackgroundManager } from './globalBackgroundManager';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
 import { BackgroundAudioManager } from './backgroundAudioManager';
 import { BackgroundMonitoringManager } from './backgroundMonitoringManager';
+import { AndroidForegroundService } from './androidForegroundService';
+import { AndroidAlarmManager } from './androidAlarmManager';
+import { AndroidBatteryManager } from './androidBatteryManager';
 
 export class BackgroundServiceCore {
   private instanceId: string;
@@ -40,13 +43,12 @@ export class BackgroundServiceCore {
         this.appStateListenerInitialized = true;
       }
       
-      // Android-specific: Optionally start background reliability enhancements
+      // Android-specific: Foreground Service & AlarmManager enhancements
       if (this.isAndroidPlatform()) {
-        this.requestBatteryOptimizationBypass();
-        this.startForegroundServiceNotification();
+        await this.startForegroundServiceNotification();
+        await this.requestBatteryOptimizationBypass();
       }
 
-      // Start background monitoring manager on init
       this.monitoringManager.startBackgroundMonitoring();
 
       // Output debug info
@@ -79,10 +81,20 @@ export class BackgroundServiceCore {
   async scheduleAllSignals(signals: Signal[]) {
     const antidelaySeconds = loadAntidelayFromStorage();
     await this.notificationManager.scheduleAllSignals(signals, antidelaySeconds);
+
+    // Android: schedule alarms natively if on device
+    if (this.isAndroidPlatform()) {
+      await AndroidAlarmManager.scheduleAlarms(signals, antidelaySeconds);
+      await this.startForegroundServiceNotification();
+    }
   }
 
   async cancelAllScheduledNotifications() {
     await this.notificationManager.cancelAllScheduledNotifications();
+    if (this.isAndroidPlatform()) {
+      await AndroidAlarmManager.cancelAllAlarms();
+      await this.stopForegroundServiceNotification();
+    }
   }
 
   private async setupAppStateListeners() {
@@ -150,11 +162,10 @@ export class BackgroundServiceCore {
    * for this app, so background work is less restricted. Needs Android plugin or intent.
    */
   async requestBatteryOptimizationBypass() {
-    // TODO: Implement using @capacitor-community/intent or Android native
-    // See: https://developer.android.com/training/battery-optimize
-    console.info(
-      '🚧 [Android-Background] (TODO) Battery optimization bypass request triggered (requires native implementation or plugin)'
-    );
+    // Android native implementation
+    if (this.isAndroidPlatform()) {
+      await AndroidBatteryManager.requestBatteryOptimizationBypass();
+    }
   }
 
   /**
@@ -162,12 +173,14 @@ export class BackgroundServiceCore {
    * (required for reliable signal processing while backgrounded/locked).
    */
   async startForegroundServiceNotification() {
-    // TODO: Implement using Capacitor/Cordova plugin or native code.
-    // e.g., showNotification and call setForegroundService on Android.
-    // See: https://developer.android.com/guide/components/foreground-services
-    console.info(
-      '🚧 [Android-Background] (TODO) Foreground service notification start (requires plugin or native code)'
-    );
+    if (this.isAndroidPlatform()) {
+      await AndroidForegroundService.getInstance().start();
+    }
+  }
+  async stopForegroundServiceNotification() {
+    if (this.isAndroidPlatform()) {
+      await AndroidForegroundService.getInstance().stop();
+    }
   }
 
   /**
