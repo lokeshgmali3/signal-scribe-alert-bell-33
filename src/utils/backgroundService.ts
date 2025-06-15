@@ -1,5 +1,5 @@
 
-import { BackgroundMode } from '@capacitor/background-mode';
+import { BackgroundMode } from '@capacitor-community/background-mode';
 import { App } from '@capacitor/app';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -19,9 +19,6 @@ class BackgroundService {
       // Set up app state listeners
       await this.setupAppStateListeners();
       
-      // Configure background mode
-      await this.configureBackgroundMode();
-      
       console.log('Background service initialized successfully');
     } catch (error) {
       console.error('Failed to initialize background service:', error);
@@ -34,10 +31,12 @@ class BackgroundService {
       const notificationPermission = await LocalNotifications.requestPermissions();
       console.log('Notification permission status:', notificationPermission);
 
-      // Request background mode permissions
-      if (await BackgroundMode.isAvailable()) {
+      // Request background mode permissions if available
+      try {
         await BackgroundMode.requestPermissions();
         console.log('Background mode permissions requested');
+      } catch (error) {
+        console.log('Background mode not available or permission denied:', error);
       }
     } catch (error) {
       console.error('Error requesting permissions:', error);
@@ -69,40 +68,14 @@ class BackgroundService {
         await this.triggerHapticFeedback();
         
         // Bring app to foreground
-        if (notification.actionId === 'view' || !notification.actionId) {
-          // The app will automatically come to foreground
-          console.log('Opening app from notification');
-        }
+        console.log('Opening app from notification');
       }
     );
   }
 
-  private async configureBackgroundMode() {
-    try {
-      if (await BackgroundMode.isAvailable()) {
-        // Configure background mode settings
-        await BackgroundMode.configure({
-          title: 'Signal Tracker Running',
-          text: 'Monitoring binary options signals',
-          silent: false,
-          hidden: false,
-          color: '488AFF',
-          resume: true,
-          allowClose: false,
-          showWhen: false,
-          disableWebViewOptimizations: true,
-        });
-        
-        console.log('Background mode configured');
-      }
-    } catch (error) {
-      console.error('Error configuring background mode:', error);
-    }
-  }
-
   async enableBackgroundMode() {
     try {
-      if (!this.isBackgroundModeEnabled && await BackgroundMode.isAvailable()) {
+      if (!this.isBackgroundModeEnabled) {
         await BackgroundMode.enable();
         this.isBackgroundModeEnabled = true;
         console.log('Background mode enabled');
@@ -114,7 +87,7 @@ class BackgroundService {
 
   async disableBackgroundMode() {
     try {
-      if (this.isBackgroundModeEnabled && await BackgroundMode.isAvailable()) {
+      if (this.isBackgroundModeEnabled) {
         await BackgroundMode.disable();
         this.isBackgroundModeEnabled = false;
         console.log('Background mode disabled');
@@ -201,23 +174,7 @@ class BackgroundService {
             extra: {
               signal: JSON.stringify(signal),
               timestamp: Date.now()
-            },
-            actions: [
-              {
-                id: 'view',
-                title: 'View Signal',
-                requiresAuthentication: false,
-                foreground: true,
-                destructive: false
-              },
-              {
-                id: 'dismiss',
-                title: 'Dismiss',
-                requiresAuthentication: false,
-                foreground: false,
-                destructive: true
-              }
-            ]
+            }
           }
         ]
       });
@@ -281,23 +238,7 @@ class BackgroundService {
               actionTypeId: 'SIGNAL_ALERT',
               extra: {
                 signal: JSON.stringify(signal)
-              },
-              actions: [
-                {
-                  id: 'view',
-                  title: 'View Signal',
-                  requiresAuthentication: false,
-                  foreground: true,
-                  destructive: false
-                },
-                {
-                  id: 'dismiss',
-                  title: 'Dismiss',
-                  requiresAuthentication: false,
-                  foreground: false,
-                  destructive: true
-                }
-              ]
+              }
             };
           }
           return null;

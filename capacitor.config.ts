@@ -31,17 +31,13 @@ const config: CapacitorConfig = {
       sound: "beep.wav",
     },
     BackgroundMode: {
+      enabled: true,
       title: "Signal Tracker Running",
       text: "Monitoring binary options signals",
       silent: false,
       hidden: false,
       color: "488AFF",
       resume: true,
-      androidNotificationTitle: "Signal Tracker Active",
-      androidNotificationText: "Monitoring for signal alerts",
-      allowClose: false,
-      showWhen: false,
-      disableWebViewOptimizations: true,
     },
     App: {
       handleLaunchUrl: true,
@@ -61,7 +57,8 @@ const config: CapacitorConfig = {
       'android.permission.USE_EXACT_ALARM',
       'android.permission.POST_NOTIFICATIONS',
       'android.permission.WRITE_EXTERNAL_STORAGE',
-      'android.permission.READ_EXTERNAL_STORAGE'
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'
     ]
   },
   ios: {
