@@ -1,6 +1,6 @@
 
 import { Signal } from '@/types/signal';
-import { loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
+import { loadAntidelayFromStorage, saveSignalsToStorage, loadSignalsFromStorage } from './signalStorage'; // <-- Added loadSignalsFromStorage here
 import { globalBackgroundManager } from './globalBackgroundManager';
 import { globalSignalProcessingLock } from './globalSignalProcessingLock';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
