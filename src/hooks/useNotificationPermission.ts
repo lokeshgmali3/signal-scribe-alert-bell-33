@@ -1,3 +1,4 @@
+
 import { useEffect, useState, useCallback } from "react";
 
 // Helper for browser detection
@@ -78,20 +79,13 @@ export function useNotificationPermission() {
     return () => window.removeEventListener("focus", onFocus);
   }, [checkPermissions]);
 
-  // Unified view: prefer web, then capacitor. Support all NotificationPermission values.
-  let effectivePermission: NotificationPermission | null = "default";
-  if (webPermission && webPermission !== "default") {
-    effectivePermission = webPermission;
-  } else if (capacitorPermission && capacitorPermission !== "default") {
-    effectivePermission = capacitorPermission;
-  } else if (webPermission === "default" || webPermission === "denied") {
-    effectivePermission = webPermission;
-  } else if (capacitorPermission === "default" || capacitorPermission === "denied") {
-    effectivePermission = capacitorPermission;
-  } else {
-    effectivePermission = "default";
-  }
+  // Unified view: prefer web, then capacitor
+  const effectivePermission = 
+    webPermission && webPermission !== "default" ? webPermission 
+    : capacitorPermission ? capacitorPermission
+    : "default";
 
+  // Unified request - always try (even if already denied)
   const requestPermission = useCallback(async () => {
     let debugMsg = "";
     let lastResult: NotificationPermission | null = null;
