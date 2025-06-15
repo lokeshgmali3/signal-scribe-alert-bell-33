@@ -1,10 +1,11 @@
+
 import React from 'react';
 import { useSignalTracker } from '@/hooks/useSignalTracker';
 import SignalInput from '@/components/SignalInput';
 import ControlPanel from '@/components/ControlPanel';
 import AntidelayDialog from '@/components/AntidelayDialog';
 import SoundSelectionDialog from '@/components/SoundSelectionDialog';
-import NotificationPermissionPopup from "@/components/NotificationPermissionPopup";
+// Removed: import NotificationPermissionPopup from "@/components/NotificationPermissionPopup";
 
 const Index = () => {
   const {
@@ -30,9 +31,18 @@ const Index = () => {
     handleAntidelayCancel
   } = useSignalTracker();
 
+  React.useEffect(() => {
+    // Silently request notification permission if not already granted or denied
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-background flex flex-col select-none" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
-      <NotificationPermissionPopup />
+      {/* <NotificationPermissionPopup /> -- removed as per instruction */}
       <SignalInput
         signalsText={signalsText}
         onSignalsTextChange={setSignalsText}
@@ -69,3 +79,4 @@ const Index = () => {
 };
 
 export default Index;
+
