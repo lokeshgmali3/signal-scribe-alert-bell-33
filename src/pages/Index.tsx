@@ -1,11 +1,10 @@
-
 import React from 'react';
 import { useSignalTracker } from '@/hooks/useSignalTracker';
 import SignalInput from '@/components/SignalInput';
 import ControlPanel from '@/components/ControlPanel';
 import AntidelayDialog from '@/components/AntidelayDialog';
 import SoundSelectionDialog from '@/components/SoundSelectionDialog';
-// Removed: import NotificationPermissionPopup from "@/components/NotificationPermissionPopup";
+import BackgroundDebugPanel from '@/components/BackgroundDebugPanel';
 
 const Index = () => {
   const {
@@ -74,9 +73,10 @@ const Index = () => {
         onSelectDefaultSound={handleSelectDefaultSound}
         onClose={handleCloseSoundDialog}
       />
+
+      <BackgroundDebugPanel />
     </div>
   );
 };
 
 export default Index;
-

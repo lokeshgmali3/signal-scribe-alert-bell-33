@@ -1,6 +1,19 @@
 export const createBeepAudio = (audioContextsRef?: React.MutableRefObject<AudioContext[]>) => {
   console.log('🔊 Creating default beep audio');
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  // Handle Chrome/Safari audio unlock by user gesture
+  let audioContext;
+  if (window.__unlockedAudioContext) {
+    audioContext = window.__unlockedAudioContext;
+  } else {
+    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    document.body.addEventListener("click", () => {
+      if (audioContext.state === "suspended") {
+        audioContext.resume().then(() => {
+          window.__unlockedAudioContext = audioContext;
+        });
+      }
+    }, { once: true });
+  }
   const oscillator = audioContext.createOscillator();
   const gainNode = audioContext.createGain();
   
@@ -38,7 +51,19 @@ export const playCustomRingtoneBackground = async (audioData: { base64: string; 
     console.log('🔊 Audio data - base64 length:', audioData.base64.length, 'mime type:', audioData.mimeType);
     
     // Create audio context
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    let audioContext;
+    if (window.__unlockedAudioContext) {
+      audioContext = window.__unlockedAudioContext;
+    } else {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      document.body.addEventListener("click", () => {
+        if (audioContext.state === "suspended") {
+          audioContext.resume().then(() => {
+            window.__unlockedAudioContext = audioContext;
+          });
+        }
+      }, { once: true });
+    }
     console.log('🔊 Audio context created, state:', audioContext.state);
     
     // Convert base64 to ArrayBuffer

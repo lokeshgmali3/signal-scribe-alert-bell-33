@@ -3,6 +3,7 @@ import { loadSignalsFromStorage, loadAntidelayFromStorage, saveSignalsToStorage 
 import { globalBackgroundManager } from './globalBackgroundManager';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
 import { BackgroundAudioManager } from './backgroundAudioManager';
+import { useGlobalSignalProcessingLock } from '@/hooks/useGlobalSignalProcessingLock';
 
 export class BackgroundMonitoringManager {
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
@@ -57,6 +58,9 @@ export class BackgroundMonitoringManager {
     globalBackgroundManager.stopBackgroundMonitoring(this.instanceId);
   }
 
+  // NEW: Add lock funcs
+  private lockFuncs = typeof window !== "undefined" ? require("@/hooks/useGlobalSignalProcessingLock") : null;
+
   private async checkSignalsInBackground() {
     try {
       const signals = await globalBackgroundManager.withStorageLock(() => 
@@ -73,25 +77,31 @@ export class BackgroundMonitoringManager {
       
       for (const signal of signals) {
         const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
-        
-        if (this.signalProcessingLock.has(signalKey)) {
-          continue;
-        }
-        
-        if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
-          this.signalProcessingLock.add(signalKey);
+        // Background: Only process if we can acquire the global lock for this signalKey
+        const acquired = this.lockFuncs?.useGlobalSignalProcessingLock()?.lockSignal(signalKey) ?? true; 
+        if (!acquired) continue;
+        try {
+          if (this.signalProcessingLock.has(signalKey)) {
+            continue;
+          }
           
-          console.log('🚀 Signal should trigger in background:', signal);
-          await this.notificationManager.triggerBackgroundNotification(signal);
-          await this.audioManager.playBackgroundAudio(signal);
-          
-          signal.triggered = true;
-          signalsUpdated = true;
-          console.log('🚀 Signal marked as triggered in background:', signal.timestamp);
-          
-          setTimeout(() => {
-            this.signalProcessingLock.delete(signalKey);
-          }, 2000);
+          if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
+            this.signalProcessingLock.add(signalKey);
+            
+            console.log('🚀 Signal should trigger in background:', signal);
+            await this.notificationManager.triggerBackgroundNotification(signal);
+            await this.audioManager.playBackgroundAudio(signal);
+            
+            signal.triggered = true;
+            signalsUpdated = true;
+            console.log('🚀 Signal marked as triggered in background:', signal.timestamp);
+            
+            setTimeout(() => {
+              this.signalProcessingLock.delete(signalKey);
+            }, 2000);
+          }
+        } finally {
+          this.lockFuncs?.useGlobalSignalProcessingLock()?.unlockSignal(signalKey);
         }
       }
       

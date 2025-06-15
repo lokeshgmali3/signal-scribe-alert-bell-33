@@ -1,10 +1,10 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { Signal } from '@/types/signal';
 import { checkSignalTime } from '@/utils/signalUtils';
 import { playCustomRingtone } from '@/utils/audioUtils';
 import { requestWakeLock, releaseWakeLock } from '@/utils/wakeLockUtils';
 import { saveSignalsToStorage } from '@/utils/signalStorage';
+import { useGlobalSignalProcessingLock } from './useGlobalSignalProcessingLock';
 
 export const useRingManager = (
   savedSignals: Signal[],
@@ -57,52 +57,57 @@ export const useRingManager = (
     setTriggeredSignals(new Set());
   }, [savedSignals]);
 
+  const { lockSignal, unlockSignal } = useGlobalSignalProcessingLock();
+
   const triggerRing = async (signal: Signal, currentCustomRingtone: string | null) => {
     const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
-
-    if (triggeredSignals.has(signalKey) || signal.triggered) {
+    // NEW: Try to lock global processing before proceeding
+    const acquired = lockSignal(signalKey);
+    if (!acquired) {
+      // Another process is handling a signal right now
       return;
     }
-
-    // REMOVED: document.visibilityState check that previously limited ringing to foreground only
-
-    setTriggeredSignals(prev => new Set(prev).add(signalKey));
-    setIsRinging(true);
-    setCurrentRingingSignal(signal);
-
-    const lock = await requestWakeLock();
-    setWakeLock(lock);
-
     try {
-      const audio = await playCustomRingtone(currentCustomRingtone, audioContextsRef);
-      if (audio instanceof HTMLAudioElement) {
-        audioInstancesRef.current.push(audio);
-        setTimeout(() => {
-          if (audio && !audio.paused) {
-            audio.pause();
-            audio.currentTime = 0;
-          }
-        }, 10000);
+      setTriggeredSignals(prev => new Set(prev).add(signalKey));
+      setIsRinging(true);
+      setCurrentRingingSignal(signal);
+
+      const lock = await requestWakeLock();
+      setWakeLock(lock);
+
+      try {
+        const audio = await playCustomRingtone(currentCustomRingtone, audioContextsRef);
+        if (audio instanceof HTMLAudioElement) {
+          audioInstancesRef.current.push(audio);
+          setTimeout(() => {
+            if (audio && !audio.paused) {
+              audio.pause();
+              audio.currentTime = 0;
+            }
+          }, 10000);
+        }
+      } catch (error) {
+        // do nothing
       }
-    } catch (error) {
-      // do nothing
+
+      signal.triggered = true;
+      onSignalTriggered(signal);
+
+      // Save the updated signals array to localStorage
+      const updatedSignals = savedSignals.map(s =>
+        s.timestamp === signal.timestamp ? { ...s, triggered: true } : s
+      );
+      saveSignalsToStorage(updatedSignals);
+
+      setTimeout(() => {
+        setIsRinging(false);
+        setCurrentRingingSignal(null);
+        releaseWakeLock(wakeLock);
+        setWakeLock(null);
+      }, 10000);
+    } finally {
+      unlockSignal(signalKey);
     }
-
-    signal.triggered = true;
-    onSignalTriggered(signal);
-
-    // Save the updated signals array to localStorage
-    const updatedSignals = savedSignals.map(s =>
-      s.timestamp === signal.timestamp ? { ...s, triggered: true } : s
-    );
-    saveSignalsToStorage(updatedSignals);
-
-    setTimeout(() => {
-      setIsRinging(false);
-      setCurrentRingingSignal(null);
-      releaseWakeLock(wakeLock);
-      setWakeLock(null);
-    }, 10000);
   };
 
   const handleRingOff = () => {
