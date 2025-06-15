@@ -4,6 +4,7 @@ import { globalBackgroundManager } from './globalBackgroundManager';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
 import { BackgroundAudioManager } from './backgroundAudioManager';
 import { globalSignalProcessingLock } from './globalSignalProcessingLock';
+import { getSignalTargetTime, checkSignalTime } from './signalUtils';
 
 export class BackgroundMonitoringManager {
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
@@ -212,17 +213,36 @@ export class BackgroundMonitoringManager {
     }
   }
 
+  // Helper: Consistency check between cache and actual storage
+  private async verifyCacheConsistency() {
+    const actualSignals = await globalBackgroundManager.withStorageLock(() => Promise.resolve(loadSignalsFromStorage()));
+    if (JSON.stringify(actualSignals) !== JSON.stringify(this.cachedSignals)) {
+      console.warn('[Monitor][Consistency] Signal cache/stored signals diverged!', {
+        cache: this.cachedSignals,
+        storage: actualSignals,
+      });
+      // Auto-recover cache
+      this.updateCache(actualSignals);
+      return false;
+    }
+    return true;
+  }
+
   // IMPORTANT: Use only the cache!
   private async checkSignalsInBackground() {
     try {
       this.isProcessingSignals = true;
       this.metrics.cacheHits++;
+      // Consistency check before processing
+      await this.verifyCacheConsistency();
+
       const signals = this.cachedSignals;
       if (!signals || signals.length === 0) {
         this.isProcessingSignals = false;
         return;
       }
-      // Consistency check: Clean up stale entries in buffer
+
+      // Remove buffer items which are now marked triggered
       this.signalBuffer = this.signalBuffer.filter(
         buffered =>
           !signals.find(
@@ -231,26 +251,33 @@ export class BackgroundMonitoringManager {
               s.asset === buffered.asset &&
               s.timestamp === buffered.timestamp &&
               s.direction === buffered.direction &&
-              s.triggered // remove from buffer if now marked as triggered
+              s.triggered // remove if triggered
           )
       );
+
       const antidelaySeconds = loadAntidelayFromStorage();
       const now = new Date();
 
-      // Track which signals actually need to be updated
+      // Track which signals should be triggered
       const signalsToTrigger: Signal[] = [];
-
-      for (const signal of signals) {
+      // ----- Expand timing window and handle boundary edge cases -----
+      signals.forEach((signal) => {
         const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
         const acquired = globalSignalProcessingLock.lockSignal(signalKey);
-        if (!acquired) continue;
+        if (!acquired) return;
         try {
-          if (this.signalProcessingLock.has(signalKey)) continue;
+          if (this.signalProcessingLock.has(signalKey)) return;
 
-          if (this.shouldTriggerSignal(signal, antidelaySeconds, now) && !signal.triggered) {
+          // Use new robust time check (5s tolerance, drift compensating)
+          if (checkSignalTime(signal, antidelaySeconds, 5) && !signal.triggered) {
+            // Additional hour-boundary and duplicate protection
+            const targetTime = getSignalTargetTime(signal, antidelaySeconds);
+            // If target time is in the past more than the tolerance window, skip (prevents double by late interval)
+            if (now.getTime() - targetTime.getTime() > 2 * 5000) return;
+
             this.signalProcessingLock.add(signalKey);
             this.metrics.signalTriggers++;
-            console.log('🚀 Signal should trigger in background:', signal);
+            console.log('🚀 Signal should trigger in background (robust):', signal);
 
             try {
               await this.notificationManager.triggerBackgroundNotification(signal);
@@ -263,7 +290,6 @@ export class BackgroundMonitoringManager {
               console.warn('[Monitor] Audio failed for signal:', signal, e);
             }
 
-            // Add to trigger queue so we only update what is needed
             signalsToTrigger.push(signal);
 
             setTimeout(() => {
@@ -273,19 +299,21 @@ export class BackgroundMonitoringManager {
         } finally {
           globalSignalProcessingLock.unlockSignal(signalKey);
         }
-      }
+      });
       // Atomically update only relevant signals, handle each independently and recover if failed
       for (const triggeredSignal of signalsToTrigger) {
         await this.processAndMarkSignal(triggeredSignal);
       }
       if (signalsToTrigger.length > 0) {
-        // Cache should refresh, but force event in case
+        // Force cache update for all listeners
         window.dispatchEvent(new Event('signals-storage-update'));
       }
+      // Run consistency check after triggers too
+      await this.verifyCacheConsistency();
       this.isProcessingSignals = false;
     } catch (error) {
       this.isProcessingSignals = false;
-      // Fail-safe: if processing fails entirely, save any batch to buffer to recover next tick.
+      // Fallback buffer all non-triggered signals if process fails
       if (this.cachedSignals?.length) {
         for (const s of this.cachedSignals.filter(si => !si.triggered)) {
           if (!this.signalBuffer.find(buf =>
@@ -298,7 +326,7 @@ export class BackgroundMonitoringManager {
           }
         }
       }
-      console.error('🚀 Error checking signals in background (signals buffered for retry):', error);
+      console.error('🚀 [Error] checking signals in background (signals buffered for retry):', error);
     }
   }
 
