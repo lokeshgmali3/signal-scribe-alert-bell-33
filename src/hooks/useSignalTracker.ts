@@ -1,11 +1,4 @@
-
 import { useEffect } from 'react';
-import { 
-  startBackgroundTask, 
-  stopBackgroundTask, 
-  scheduleAllSignalNotifications,
-  getBackgroundTaskStatus
-} from '@/utils/backgroundTaskManager';
 import { useSignalState } from './useSignalState';
 import { useRingManager } from './useRingManager';
 import { useAntidelayManager } from './useAntidelayManager';
@@ -47,35 +40,13 @@ export const useSignalTracker = () => {
     handleAntidelayCancel
   } = useAntidelayManager(savedSignals, antidelaySeconds, setAntidelaySeconds, audioManager);
 
-  // Start background task when app loads and signals exist
-  useEffect(() => {
-    if (savedSignals.length > 0) {
-      // Check if background task is already running to prevent duplicates
-      const status = getBackgroundTaskStatus();
-      if (!status.isActive) {
-        startBackgroundTask();
-      }
-      
-      scheduleAllSignalNotifications(savedSignals);
-      
-      // Register service worker for background sync
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'REGISTER_BACKGROUND_SYNC'
-        });
-      }
-    } else {
-      // Stop background task if no signals
-      stopBackgroundTask();
-    }
+  // Disable all background scheduling and service worker registration
+  // Only keep possible sync on foreground (if relevant; no-op for now)
 
-    return () => {
-      // Only stop if this is the last instance
-      const status = getBackgroundTaskStatus();
-      if (status.isActive && savedSignals.length === 0) {
-        stopBackgroundTask();
-      }
-    };
+  useEffect(() => {
+    // No background processing.
+    // All foreground processing handled by useRingManager.
+    // Buttons and state management preserved.
   }, [savedSignals]);
 
   return {
