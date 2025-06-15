@@ -1,4 +1,3 @@
-
 import { useEffect, useState, useCallback } from "react";
 
 // Helper for browser detection
@@ -80,10 +79,15 @@ export function useNotificationPermission() {
   }, [checkPermissions]);
 
   // Unified view: prefer web, then capacitor
-  const effectivePermission = 
-    webPermission && webPermission !== "default" ? webPermission 
-    : capacitorPermission ? capacitorPermission
-    : "default";
+  // Ensure proper type: NotificationPermission | null
+  let effectivePermission: NotificationPermission | null = "default";
+  if (webPermission && webPermission !== "default") {
+    effectivePermission = webPermission;
+  } else if (capacitorPermission) {
+    effectivePermission = capacitorPermission;
+  } else {
+    effectivePermission = "default";
+  }
 
   // Unified request - always try (even if already denied)
   const requestPermission = useCallback(async () => {
