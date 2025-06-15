@@ -2,8 +2,14 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
+import { backgroundService } from './utils/backgroundService'
 
-// Register service worker for background functionality
+// Initialize background service for native mobile functionality
+backgroundService.initialize().catch(error => {
+  console.error('Failed to initialize background service:', error);
+});
+
+// Register service worker for web-based background functionality
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
@@ -36,7 +42,7 @@ if ('Notification' in window && Notification.permission === 'default') {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     console.log('App moved to background');
-    // The background task will be started by the useSignalTracker hook
+    // Background service will handle this automatically
   } else {
     console.log('App returned to foreground');
     // Reload signals from storage to sync any changes made in background

@@ -3,6 +3,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Signal } from '@/types/signal';
 import { loadSignalsFromStorage, loadAntidelayFromStorage } from './signalStorage';
 import { checkSignalTime } from './signalUtils';
+import { backgroundService } from './backgroundService';
 
 let backgroundCheckInterval: NodeJS.Timeout | undefined;
 
@@ -17,9 +18,12 @@ export const startBackgroundTask = async () => {
       return;
     }
 
-    console.log('Background task started - using interval monitoring');
+    console.log('Background task started - using hybrid monitoring');
     
-    // Start checking signals every second
+    // Enable background service for native functionality
+    await backgroundService.enableBackgroundMode();
+    
+    // Start checking signals every second for web functionality
     backgroundCheckInterval = setInterval(async () => {
       await checkSignalsInBackground();
     }, 1000);
@@ -35,6 +39,11 @@ export const stopBackgroundTask = () => {
     backgroundCheckInterval = undefined;
     console.log('Background task stopped');
   }
+  
+  // Disable background service
+  backgroundService.disableBackgroundMode().catch(error => {
+    console.error('Error disabling background service:', error);
+  });
 };
 
 const checkSignalsInBackground = async () => {
@@ -43,16 +52,12 @@ const checkSignalsInBackground = async () => {
     const antidelaySeconds = loadAntidelayFromStorage();
     
     for (const signal of signals) {
-      if (checkSignalTime(signal, antidelaySeconds)) {
+      if (checkSignalTime(signal, antidelaySeconds) && !signal.triggered) {
         await triggerLocalNotification(signal);
         
         // Mark signal as triggered and save back to storage
         signal.triggered = true;
-        const updatedSignals = signals.map(s => 
-          s === signal ? { ...s, triggered: true } : s
-        );
-        // Note: We can't import saveSignalsToStorage here due to circular dependency
-        // The signal will be marked as triggered when app returns to foreground
+        console.log('Signal triggered in web background:', signal);
       }
     }
   } catch (error) {
@@ -65,13 +70,13 @@ const triggerLocalNotification = async (signal: Signal) => {
     await LocalNotifications.schedule({
       notifications: [
         {
-          title: 'Binary Options Signal Alert!',
-          body: `${signal.asset} - ${signal.direction} at ${signal.timestamp}`,
+          title: '🚨 Binary Options Signal Alert!',
+          body: `${signal.asset || 'Asset'} - ${signal.direction || 'Direction'} at ${signal.timestamp}`,
           id: Date.now(),
           schedule: { at: new Date() },
           sound: 'default',
           attachments: undefined,
-          actionTypeId: '',
+          actionTypeId: 'SIGNAL_ALERT',
           extra: {
             signal: JSON.stringify(signal)
           }
@@ -85,9 +90,13 @@ const triggerLocalNotification = async (signal: Signal) => {
   }
 };
 
-// Schedule notifications in advance for all signals
+// Schedule notifications in advance for all signals using the background service
 export const scheduleAllSignalNotifications = async (signals: Signal[]) => {
   try {
+    // Use the background service for comprehensive scheduling
+    await backgroundService.scheduleAllSignals(signals);
+    
+    // Also handle web-based scheduling as fallback
     const antidelaySeconds = loadAntidelayFromStorage();
     const now = new Date();
     
@@ -107,13 +116,13 @@ export const scheduleAllSignalNotifications = async (signals: Signal[]) => {
         // Only schedule if notification time is in the future
         if (notificationTime > now) {
           return {
-            title: 'Binary Options Signal Alert!',
-            body: `${signal.asset} - ${signal.direction} at ${signal.timestamp}`,
+            title: '🚨 Binary Options Signal Alert!',
+            body: `${signal.asset || 'Asset'} - ${signal.direction || 'Direction'} at ${signal.timestamp}`,
             id: index + 1,
             schedule: { at: notificationTime },
             sound: 'default',
             attachments: undefined,
-            actionTypeId: '',
+            actionTypeId: 'SIGNAL_ALERT',
             extra: {
               signal: JSON.stringify(signal)
             }
@@ -127,7 +136,7 @@ export const scheduleAllSignalNotifications = async (signals: Signal[]) => {
       await LocalNotifications.schedule({
         notifications: notifications as any[]
       });
-      console.log(`Scheduled ${notifications.length} notifications`);
+      console.log(`Scheduled ${notifications.length} web notifications`);
     }
   } catch (error) {
     console.error('Failed to schedule signal notifications:', error);

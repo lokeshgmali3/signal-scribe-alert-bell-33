@@ -2,11 +2,11 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.lovable.2d7d3733b2784c8c90fb4c2f861b9411',
-  appName: 'signal-scribe-alert-bell-05',
+  appId: 'app.lovable.f9b15f93845c45828e5d185285630eeb',
+  appName: 'signal-scribe-alert-bell-67',
   webDir: 'dist',
   server: {
-    url: 'https://2d7d3733-b278-4c8c-90fb-4c2f861b9411.lovableproject.com?forceHideBadge=true',
+    url: 'https://f9b15f93-845c-4582-8e5d-185285630eeb.lovableproject.com?forceHideBadge=true',
     cleartext: true
   },
   plugins: {
@@ -29,8 +29,57 @@ const config: CapacitorConfig = {
       smallIcon: "ic_stat_icon_config_sample",
       iconColor: "#488AFF",
       sound: "beep.wav",
-    }
+    },
+    BackgroundMode: {
+      title: "Signal Tracker Running",
+      text: "Monitoring binary options signals",
+      silent: false,
+      hidden: false,
+      color: "488AFF",
+      resume: true,
+      androidNotificationTitle: "Signal Tracker Active",
+      androidNotificationText: "Monitoring for signal alerts",
+      allowClose: false,
+      showWhen: false,
+      disableWebViewOptimizations: true,
+    },
+    App: {
+      handleLaunchUrl: true,
+    },
   },
+  android: {
+    allowMixedContent: true,
+    captureInput: true,
+    webContentsDebuggingEnabled: true,
+    permissions: [
+      'android.permission.WAKE_LOCK',
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.VIBRATE',
+      'android.permission.RECEIVE_BOOT_COMPLETED',
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.SCHEDULE_EXACT_ALARM',
+      'android.permission.USE_EXACT_ALARM',
+      'android.permission.POST_NOTIFICATIONS',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
+      'android.permission.READ_EXTERNAL_STORAGE'
+    ]
+  },
+  ios: {
+    scheme: "SignalTracker",
+    backgroundColor: "#000000",
+    contentInset: "automatic",
+    scrollEnabled: true,
+    preferences: {
+      ScrollEnabled: true,
+      'ios-plist': {
+        UIBackgroundModes: [
+          'background-audio',
+          'background-fetch',
+          'background-processing'
+        ]
+      }
+    }
+  }
 };
 
 export default config;
