@@ -9,6 +9,7 @@ import { BackgroundMonitoringManager } from './backgroundMonitoringManager';
 import { AndroidForegroundService } from './androidForegroundService';
 import { AndroidAlarmManager } from './androidAlarmManager';
 import { AndroidBatteryManager } from './androidBatteryManager';
+import { nativeAndroidManager } from './nativeAndroidManager';
 
 const AUDIO_ONLY_MODE_KEY = 'audioOnlyMode';
 
@@ -52,26 +53,43 @@ export class BackgroundServiceCore {
   async initialize() {
     try {
       console.log('🚀 Initializing background service instance:', this.instanceId);
-      // Don't request notification permissions if audio-only
-      if (!this.audioOnlyMode) {
-        await this.notificationManager.requestPermissions();
-      }
-
-      if (!this.appStateListenerInitialized) {
-        await this.setupAppStateListeners();
-        this.appStateListenerInitialized = true;
-      }
       
-      // Android-specific: Foreground Service & AlarmManager enhancements
-      if (this.isAndroidPlatform()) {
-        await this.startForegroundServiceNotification();
-        await this.requestBatteryOptimizationBypass();
+      // Check if we're on native Android
+      if (nativeAndroidManager.isAndroidNative()) {
+        console.log('🤖 Native Android detected, using native features');
+        
+        // Request permissions and setup
+        await nativeAndroidManager.requestBatteryOptimization();
+        await nativeAndroidManager.startForegroundService();
+        
+        // Check permissions
+        const permissions = await nativeAndroidManager.checkNativePermissions();
+        if (permissions) {
+          console.log('🤖 Native permissions status:', permissions);
+        }
+      } else {
+        console.log('🌐 Web platform detected, using web features');
+        
+        // Don't request notification permissions if audio-only
+        if (!this.audioOnlyMode) {
+          await this.notificationManager.requestPermissions();
+        }
+
+        if (!this.appStateListenerInitialized) {
+          await this.setupAppStateListeners();
+          this.appStateListenerInitialized = true;
+        }
+        
+        // Android-specific: Foreground Service & AlarmManager enhancements
+        if (this.isAndroidPlatform()) {
+          await this.startForegroundServiceNotification();
+          await this.requestBatteryOptimizationBypass();
+        }
       }
 
-      this.monitoringManager.setAudioOnlyMode(this.audioOnlyMode); // propagate always
+      this.monitoringManager.setAudioOnlyMode(this.audioOnlyMode);
       this.monitoringManager.startBackgroundMonitoring();
 
-      // Output debug info
       this.debugBackgroundStatus();
       
       console.log('🚀 Background service initialized successfully');
@@ -94,15 +112,36 @@ export class BackgroundServiceCore {
   }
 
   async playBackgroundAudio(signal?: Signal) {
+    // Try native Android first
+    if (nativeAndroidManager.isAndroidNative()) {
+      const nativeSuccess = await nativeAndroidManager.playNativeAudio(this.customRingtone || undefined);
+      if (nativeSuccess) {
+        console.log('🤖 Using native Android audio playback');
+        return;
+      }
+    }
+    
+    // Fallback to web-based audio
     await this.audioManager.playBackgroundAudio(signal);
   }
 
   // Notification methods
   async scheduleAllSignals(signals: Signal[]) {
     const antidelaySeconds = loadAntidelayFromStorage();
+    
+    // Try native Android first
+    if (nativeAndroidManager.isAndroidNative()) {
+      const nativeSuccess = await nativeAndroidManager.scheduleNativeAlarms(signals, antidelaySeconds);
+      if (nativeSuccess) {
+        console.log('🤖 Using native Android alarms');
+        return;
+      }
+    }
+    
+    // Fallback to web-based notifications
     await this.notificationManager.scheduleAllSignals(signals, antidelaySeconds);
 
-    // Android: schedule alarms natively if on device
+    // Android: schedule alarms natively if on device (legacy web approach)
     if (this.isAndroidPlatform()) {
       await AndroidAlarmManager.scheduleAlarms(signals, antidelaySeconds);
       await this.startForegroundServiceNotification();
@@ -110,6 +149,17 @@ export class BackgroundServiceCore {
   }
 
   async cancelAllScheduledNotifications() {
+    // Try native Android first
+    if (nativeAndroidManager.isAndroidNative()) {
+      const nativeSuccess = await nativeAndroidManager.cancelNativeAlarms();
+      if (nativeSuccess) {
+        await nativeAndroidManager.stopForegroundService();
+        console.log('🤖 Using native Android cancellation');
+        return;
+      }
+    }
+    
+    // Fallback to web-based cancellation
     await this.notificationManager.cancelAllScheduledNotifications();
     if (this.isAndroidPlatform()) {
       await AndroidAlarmManager.cancelAllAlarms();

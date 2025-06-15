@@ -29,7 +29,6 @@ const config: CapacitorConfig = {
       smallIcon: "ic_stat_icon_config_sample",
       iconColor: "#488AFF",
       sound: "beep.wav",
-      // Add Android notification channel config
       channels: [
         {
           id: "signal_alerts_channel",
@@ -44,8 +43,10 @@ const config: CapacitorConfig = {
       handleLaunchUrl: true,
     },
     AlarmManager: {
-      // Required by @capacitor-community/alarm-manager
       persistAcrossReboots: true
+    },
+    AndroidSignalPlugin: {
+      // Plugin will be automatically detected
     }
   },
   android: {
@@ -62,7 +63,8 @@ const config: CapacitorConfig = {
       'android.permission.WRITE_EXTERNAL_STORAGE',
       'android.permission.READ_EXTERNAL_STORAGE',
       'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
-      'android.permission.FOREGROUND_SERVICE'
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK'
     ]
   },
   ios: {
