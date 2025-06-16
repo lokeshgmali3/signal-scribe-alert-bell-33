@@ -27,8 +27,11 @@ function setAudioOnlyMode(val: boolean) {
 
 export class BackgroundMonitoringManager {
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
+  private recoveryInterval: NodeJS.Timeout | null = null;
   private instanceId: string;
   private audioOnlyMode: boolean;
+  private lastVisibilityState: string = 'visible';
+  private missedSignalCheckInterval: NodeJS.Timeout | null = null;
 
   private metricsManager: MonitoringMetricsManager;
   private cacheManager: SignalCacheManager;
@@ -52,12 +55,94 @@ export class BackgroundMonitoringManager {
       this.audioOnlyMode
     );
     this.timingManager = new SignalTimingManager();
+
+    this.setupVisibilityChangeHandler();
+  }
+
+  private setupVisibilityChangeHandler(): void {
+    document.addEventListener('visibilitychange', () => {
+      const currentState = document.visibilityState;
+      console.log(`[Monitor] Visibility changed from ${this.lastVisibilityState} to ${currentState}`);
+      
+      if (currentState === 'visible' && this.lastVisibilityState === 'hidden') {
+        // App became visible again - check for missed signals
+        this.handleAppBecameVisible();
+      }
+      
+      this.lastVisibilityState = currentState;
+    });
+  }
+
+  private async handleAppBecameVisible(): Promise<void> {
+    console.log('[Monitor] App became visible - checking for missed signals');
+    
+    // Immediate check for missed signals
+    await this.checkForMissedSignals();
+    
+    // Reset timing manager to clear drift detection
+    this.timingManager.reset();
+  }
+
+  private async checkForMissedSignals(): Promise<void> {
+    try {
+      const signals = this.cacheManager.getCachedSignals();
+      if (!signals || signals.length === 0) return;
+      
+      const antidelaySeconds = loadAntidelayFromStorage();
+      const now = new Date();
+      
+      console.log('[Monitor] Checking for missed signals:', signals.length);
+      
+      const signalsToTrigger: Signal[] = [];
+      
+      for (const signal of signals) {
+        if (!signal.triggered) {
+          const [signalHours, signalMinutes] = signal.timestamp.split(':').map(Number);
+          const signalDate = new Date(now);
+          signalDate.setHours(signalHours, signalMinutes, 0, 0);
+          
+          const targetTime = new Date(signalDate.getTime() - antidelaySeconds * 1000);
+          
+          // Check if we've passed the target time (with extended tolerance for missed signals)
+          const timeDiff = now.getTime() - targetTime.getTime();
+          
+          if (timeDiff > 0 && timeDiff < 300000) { // Within 5 minutes of target time
+            console.warn('[Recovery] Missed signal detected, triggering:', signal.timestamp);
+            const triggered = await this.triggerManager.processSignalTrigger(signal);
+            if (triggered) {
+              signalsToTrigger.push(signal);
+            }
+          }
+        }
+      }
+      
+      // Mark triggered signals as triggered
+      for (const triggeredSignal of signalsToTrigger) {
+        await this.atomicallyMarkSignalAsTriggered(triggeredSignal);
+      }
+      
+      if (signalsToTrigger.length > 0) {
+        window.dispatchEvent(new Event('signals-storage-update'));
+      }
+    } catch (error) {
+      console.error('[Monitor] Error checking for missed signals:', error);
+    }
   }
 
   cleanup(): void {
     this.stopBackgroundMonitoring();
     this.triggerManager.cleanup();
     this.cacheManager.cleanup();
+    
+    if (this.recoveryInterval) {
+      clearInterval(this.recoveryInterval);
+      this.recoveryInterval = null;
+    }
+    
+    if (this.missedSignalCheckInterval) {
+      clearInterval(this.missedSignalCheckInterval);
+      this.missedSignalCheckInterval = null;
+    }
   }
 
   startBackgroundMonitoring(): void {
@@ -88,6 +173,7 @@ export class BackgroundMonitoringManager {
       } catch { /* Ignore errors, not all browsers support */ }
     };
 
+    // Main monitoring interval - more frequent for better reliability
     this.backgroundCheckInterval = setInterval(async () => {
       await attemptAcquireWakeLock();
 
@@ -102,6 +188,19 @@ export class BackgroundMonitoringManager {
       }
       await this.checkSignalsInBackground();
     }, 1000);
+
+    // Recovery interval for missed signals - runs every 30 seconds
+    this.recoveryInterval = setInterval(async () => {
+      if (this.timingManager.isThrottleDetected()) {
+        console.log('[Recovery] Timer throttle detected, checking for missed signals');
+        await this.checkForMissedSignals();
+      }
+    }, 30000);
+
+    // Periodic missed signal check - runs every 2 minutes regardless of throttle detection
+    this.missedSignalCheckInterval = setInterval(async () => {
+      await this.checkForMissedSignals();
+    }, 120000);
   }
 
   stopBackgroundMonitoring(): void {
@@ -110,6 +209,17 @@ export class BackgroundMonitoringManager {
       clearInterval(this.backgroundCheckInterval);
       this.backgroundCheckInterval = null;
     }
+    
+    if (this.recoveryInterval) {
+      clearInterval(this.recoveryInterval);
+      this.recoveryInterval = null;
+    }
+    
+    if (this.missedSignalCheckInterval) {
+      clearInterval(this.missedSignalCheckInterval);
+      this.missedSignalCheckInterval = null;
+    }
+    
     globalBackgroundManager.stopBackgroundMonitoring(this.instanceId);
   }
 
@@ -172,22 +282,6 @@ export class BackgroundMonitoringManager {
           const triggered = await this.triggerManager.processSignalTrigger(signal);
           if (triggered) {
             signalsToTrigger.push(signal);
-          }
-        }
-      }
-
-      if (this.timingManager.isThrottleDetected() && signals) {
-        const recoveryNow = new Date();
-        for (const signal of signals) {
-          if (!signal.triggered) {
-            const shouldTrigger = this.timingManager.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, recoveryNow);
-            if (shouldTrigger) {
-              console.warn('[Recovery] Missed signal detected (timer drift), catching up audio:', signal);
-              const triggered = await this.triggerManager.processSignalTrigger(signal);
-              if (triggered) {
-                signalsToTrigger.push(signal);
-              }
-            }
           }
         }
       }

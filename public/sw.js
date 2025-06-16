@@ -95,14 +95,20 @@ async function checkSignals() {
     }
     
     const now = new Date();
+    let triggeredAny = false;
     
     for (const signal of signals) {
       if (shouldTriggerSignal(signal, antidelaySeconds || 15, now)) {
         await showNotification(signal);
         // Mark signal as triggered
         signal.triggered = true;
-        await putToDB('signals', 'binary_signals', signals);
+        triggeredAny = true;
       }
+    }
+    
+    // Save updated signals back to storage if any were triggered
+    if (triggeredAny) {
+      await putToDB('signals', 'binary_signals', signals);
     }
   } catch (error) {
     console.error('Error checking signals in service worker:', error);
@@ -119,9 +125,9 @@ function shouldTriggerSignal(signal, antidelaySeconds, now) {
   // Subtract antidelay seconds
   const targetTime = new Date(signalDate.getTime() - (antidelaySeconds * 1000));
   
-  // Check if current time matches target time (within 1 second tolerance)
+  // Check if current time matches target time (within 5 second tolerance for better reliability)
   const timeDiff = Math.abs(now.getTime() - targetTime.getTime());
-  return timeDiff < 1000;
+  return timeDiff < 5000;
 }
 
 async function showNotification(signal) {
@@ -188,16 +194,18 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Set up periodic background sync and sync with IndexedDB
+// Enhanced background sync registration with better error handling
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'REGISTER_BACKGROUND_SYNC') {
     console.log('Registering background sync with IndexedDB support');
     
-    // Register for background sync
-    self.registration.sync.register('signal-check').then(() => {
-      console.log('Background sync registered');
+    // Register for background sync with shorter tag name to avoid length issues
+    self.registration.sync.register('signals').then(() => {
+      console.log('Background sync registered successfully');
     }).catch((err) => {
       console.log('Background sync registration failed:', err);
+      // Fallback: Set up periodic checks using setTimeout
+      setupFallbackPeriodicCheck();
     });
     
     // Sync localStorage data to IndexedDB
@@ -207,5 +215,23 @@ self.addEventListener('message', (event) => {
     if (event.data.antidelaySeconds) {
       putToDB('settings', 'antidelay_seconds', event.data.antidelaySeconds);
     }
+  }
+});
+
+// Fallback periodic check for when background sync fails
+function setupFallbackPeriodicCheck() {
+  console.log('Setting up fallback periodic signal checks');
+  
+  // Check signals every 30 seconds as fallback
+  setInterval(() => {
+    checkSignals();
+  }, 30000);
+}
+
+// Handle visibility changes to trigger immediate checks
+self.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    console.log('App became visible - checking signals immediately');
+    checkSignals();
   }
 });
