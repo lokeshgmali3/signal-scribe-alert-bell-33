@@ -1,10 +1,10 @@
+
 import React from 'react';
 import { useSignalTracker } from '@/hooks/useSignalTracker';
 import SignalInput from '@/components/SignalInput';
 import ControlPanel from '@/components/ControlPanel';
 import AntidelayDialog from '@/components/AntidelayDialog';
 import SoundSelectionDialog from '@/components/SoundSelectionDialog';
-import BackgroundDebugPanel from '@/components/BackgroundDebugPanel';
 
 const Index = () => {
   const {
@@ -41,7 +41,6 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col select-none" style={{ userSelect: 'none', WebkitUserSelect: 'none' }}>
-      {/* <NotificationPermissionPopup /> -- removed as per instruction */}
       <SignalInput
         signalsText={signalsText}
         onSignalsTextChange={setSignalsText}
@@ -73,8 +72,6 @@ const Index = () => {
         onSelectDefaultSound={handleSelectDefaultSound}
         onClose={handleCloseSoundDialog}
       />
-
-      <BackgroundDebugPanel />
     </div>
   );
 };
