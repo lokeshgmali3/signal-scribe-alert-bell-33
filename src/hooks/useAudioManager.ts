@@ -1,6 +1,5 @@
 
 import { useState, useEffect, useRef } from 'react';
-import { backgroundService } from '@/utils/backgroundService';
 
 export const useAudioManager = () => {
   const [customRingtone, setCustomRingtone] = useState<string | null>(null);
@@ -26,41 +25,24 @@ export const useAudioManager = () => {
         document.body.removeChild(fileInputRef.current);
       }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // do not include handleRingtoneSelect
 
-  const handleRingtoneSelect = async (event: Event) => {
+  // No background sync! Everything below is foreground only.
+
+  const handleRingtoneSelect = (event: Event) => {
     const target = event.target as HTMLInputElement;
     const file = target.files?.[0];
     
     if (file) {
       console.log('🎵 Custom ringtone selected:', file.name, 'size:', file.size, 'bytes');
 
-      // Store as blob URL for foreground playback
+      // Store as blob URL for foreground playback only
       const blobUrl = URL.createObjectURL(file);
       console.log('🎵 Created blob URL:', blobUrl);
 
       setCustomRingtone(blobUrl);
       setUseDefault(false);
-
-      // Convert to base64 and cache for background service
-      try {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64String = reader.result as string;
-          const base64Data = base64String.split(',')[1];
-          
-          // Cache in background service for background playback
-          await backgroundService.cacheCustomAudio(base64Data, file.type);
-          console.log('🎵 Custom audio cached in background service');
-        };
-        reader.readAsDataURL(file);
-      } catch (error) {
-        console.error('🎵 Error caching custom audio:', error);
-      }
-
-      // Set ringtone in background service
-      backgroundService.setCustomRingtone(blobUrl);
-      
       console.log('🎵 Audio Manager - After selection - useDefault:', false, 'customRingtone set');
     }
   };
@@ -68,7 +50,7 @@ export const useAudioManager = () => {
   const triggerRingtoneSelection = () => {
     console.log('🎵 Triggering ringtone selection dialog');
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = ''; // allow re-upload of same file
       fileInputRef.current.click();
     }
   };
@@ -77,11 +59,6 @@ export const useAudioManager = () => {
     console.log('🎵 Setting to use default sound');
     setUseDefault(true);
     setCustomRingtone(null);
-    
-    // Clear custom audio from background service
-    backgroundService.setCustomRingtone(null);
-    backgroundService.clearCustomAudio();
-    
     console.log('🎵 Audio Manager - After default selection - useDefault:', true, 'customRingtone:', null);
   };
 
@@ -95,3 +72,4 @@ export const useAudioManager = () => {
     setUseDefaultSound
   };
 };
+
