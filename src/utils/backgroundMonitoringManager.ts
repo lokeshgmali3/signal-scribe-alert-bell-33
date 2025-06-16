@@ -1,11 +1,13 @@
+
 import { Signal } from '@/types/signal';
-import { loadAntidelayFromStorage, saveSignalsToStorage } from './signalStorage';
+import { loadAntidelayFromStorage, saveSignalsToStorage, loadSignalsFromStorage } from './signalStorage';
 import { globalBackgroundManager } from './globalBackgroundManager';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
 import { BackgroundAudioManager } from './backgroundAudioManager';
-import { globalSignalProcessingLock } from './globalSignalProcessingLock';
 import { MonitoringMetricsManager } from './monitoringMetrics';
 import { SignalCacheManager } from './signalCacheManager';
+import { SignalTriggerManager } from './signalTriggerManager';
+import { SignalTimingManager } from './signalTimingManager';
 
 const AUDIO_ONLY_MODE_KEY = 'audioOnlyMode';
 
@@ -25,21 +27,13 @@ function setAudioOnlyMode(val: boolean) {
 
 export class BackgroundMonitoringManager {
   private backgroundCheckInterval: NodeJS.Timeout | null = null;
-  private signalProcessingLock = new Set<string>();
   private instanceId: string;
-  private notificationManager: BackgroundNotificationManager;
-  private audioManager: BackgroundAudioManager;
   private audioOnlyMode: boolean;
 
   private metricsManager: MonitoringMetricsManager;
   private cacheManager: SignalCacheManager;
-
-  // Tolerance for trigger (seconds)
-  private static readonly SIGNAL_TRIGGER_WINDOW_MS = 3000; // 3 seconds
-
-  private lastCheckTime: number | null = null;
-  private throttleDetected: boolean = false;
-  private driftAccumMs: number = 0;
+  private triggerManager: SignalTriggerManager;
+  private timingManager: SignalTimingManager;
 
   constructor(
     instanceId: string,
@@ -47,17 +41,22 @@ export class BackgroundMonitoringManager {
     audioManager: BackgroundAudioManager
   ) {
     this.instanceId = instanceId;
-    this.notificationManager = notificationManager;
-    this.audioManager = audioManager;
     this.audioOnlyMode = getAudioOnlyMode();
     
     this.metricsManager = new MonitoringMetricsManager();
     this.cacheManager = new SignalCacheManager(this.metricsManager);
+    this.triggerManager = new SignalTriggerManager(
+      notificationManager,
+      audioManager,
+      this.metricsManager,
+      this.audioOnlyMode
+    );
+    this.timingManager = new SignalTimingManager();
   }
 
   cleanup(): void {
     this.stopBackgroundMonitoring();
-    this.signalProcessingLock.clear();
+    this.triggerManager.cleanup();
     this.cacheManager.cleanup();
   }
 
@@ -78,9 +77,7 @@ export class BackgroundMonitoringManager {
       this.audioOnlyMode
     );
 
-    this.lastCheckTime = null;
-    this.throttleDetected = false;
-    this.driftAccumMs = 0;
+    this.timingManager.reset();
 
     const attemptAcquireWakeLock = async () => {
       try {
@@ -94,21 +91,7 @@ export class BackgroundMonitoringManager {
     this.backgroundCheckInterval = setInterval(async () => {
       await attemptAcquireWakeLock();
 
-      const now = Date.now();
-      if (this.lastCheckTime !== null) {
-        const elapsed = now - this.lastCheckTime;
-        if (elapsed > 1500) {
-          this.throttleDetected = true;
-          this.driftAccumMs += elapsed - 1000;
-          console.warn(
-            `[Monitor] Timer drift/throttle detected! Interval ms:`,
-            elapsed,
-            'Total drift:',
-            this.driftAccumMs
-          );
-        }
-      }
-      this.lastCheckTime = now;
+      this.timingManager.checkForTimerDrift();
 
       if (globalBackgroundManager.getStatus().activeInstanceId !== this.instanceId) {
         console.warn(
@@ -182,46 +165,28 @@ export class BackgroundMonitoringManager {
       const signalsToTrigger: Signal[] = [];
 
       for (const signal of signals) {
-        const signalKey = `${signal.timestamp}-${signal.asset}-${signal.direction}`;
-        const acquired = globalSignalProcessingLock.lockSignal(signalKey);
-        if (!acquired) continue;
-        try {
-          if (this.signalProcessingLock.has(signalKey)) {
-            continue;
-          }
-          if (
-            this.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, now) &&
-            !signal.triggered
-          ) {
-            this.signalProcessingLock.add(signalKey);
-            this.metricsManager.incrementSignalTriggers();
-            console.log('🚀 Signal should trigger in background:', signal);
-
-            if (!this.audioOnlyMode) {
-              await this.notificationManager.triggerBackgroundNotification(signal);
-            }
-            await this.audioManager.playBackgroundAudio(signal);
-
+        if (
+          this.timingManager.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, now) &&
+          !signal.triggered
+        ) {
+          const triggered = await this.triggerManager.processSignalTrigger(signal);
+          if (triggered) {
             signalsToTrigger.push(signal);
-
-            setTimeout(() => {
-              this.signalProcessingLock.delete(signalKey);
-            }, 2000);
           }
-        } finally {
-          globalSignalProcessingLock.unlockSignal(signalKey);
         }
       }
 
-      if (this.throttleDetected && signals) {
+      if (this.timingManager.isThrottleDetected() && signals) {
         const recoveryNow = new Date();
         for (const signal of signals) {
           if (!signal.triggered) {
-            const triggered = this.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, recoveryNow);
-            if (triggered) {
+            const shouldTrigger = this.timingManager.shouldTriggerSignalWithTolerance(signal, antidelaySeconds, recoveryNow);
+            if (shouldTrigger) {
               console.warn('[Recovery] Missed signal detected (timer drift), catching up audio:', signal);
-              await this.audioManager.playBackgroundAudio(signal);
-              signalsToTrigger.push(signal);
+              const triggered = await this.triggerManager.processSignalTrigger(signal);
+              if (triggered) {
+                signalsToTrigger.push(signal);
+              }
             }
           }
         }
@@ -238,36 +203,12 @@ export class BackgroundMonitoringManager {
     }
   }
 
-  private shouldTriggerSignalWithTolerance(signal: Signal, antidelaySeconds: number, now: Date): boolean {
-    if (signal.triggered) return false;
-
-    const [signalHours, signalMinutes] = signal.timestamp.split(':').map(Number);
-    const signalDate = new Date(now);
-    signalDate.setHours(signalHours, signalMinutes, 0, 0);
-
-    const targetTime = new Date(signalDate.getTime() - antidelaySeconds * 1000);
-
-    if (
-      signalDate.getHours() !== signalHours ||
-      isNaN(signalHours) || isNaN(signalMinutes)
-    ) {
-      return false;
-    }
-
-    const diff = Math.abs(now.getTime() - targetTime.getTime());
-    if (diff < BackgroundMonitoringManager.SIGNAL_TRIGGER_WINDOW_MS) {
-      return true;
-    }
-
-    return false;
-  }
-
   isActive(): boolean {
     return !!this.backgroundCheckInterval;
   }
 
   getProcessingSignals(): string[] {
-    return Array.from(this.signalProcessingLock);
+    return this.triggerManager.getProcessingSignals();
   }
 
   getMetrics() {
@@ -276,6 +217,7 @@ export class BackgroundMonitoringManager {
 
   setAudioOnlyMode(mode: boolean): void {
     this.audioOnlyMode = mode;
+    this.triggerManager.setAudioOnlyMode(mode);
     setAudioOnlyMode(mode);
   }
 

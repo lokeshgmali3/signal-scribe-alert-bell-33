@@ -1,17 +1,16 @@
 
 import { Signal } from '@/types/signal';
-import { loadAntidelayFromStorage } from './signalStorage';
 import { globalBackgroundManager } from './globalBackgroundManager';
 import { BackgroundNotificationManager } from './backgroundNotificationManager';
 import { BackgroundAudioManager } from './backgroundAudioManager';
 import { BackgroundMonitoringManager } from './backgroundMonitoringManager';
-import { AndroidForegroundService } from './androidForegroundService';
-import { AndroidAlarmManager } from './androidAlarmManager';
-import { AndroidBatteryManager } from './androidBatteryManager';
 import { nativeAndroidManager } from './nativeAndroidManager';
 import { AudioOnlyModeManager } from './audioOnlyModeManager';
 import { AppStateManager } from './appStateManager';
 import { PlatformUtils } from './platformUtils';
+import { PlatformInitializer } from './platformInitializer';
+import { SignalScheduler } from './signalScheduler';
+import { ServiceStatusManager } from './serviceStatusManager';
 
 export class BackgroundServiceCore {
   private instanceId: string;
@@ -20,6 +19,9 @@ export class BackgroundServiceCore {
   private monitoringManager: BackgroundMonitoringManager;
   private audioOnlyModeManager: AudioOnlyModeManager;
   private appStateManager: AppStateManager;
+  private platformInitializer: PlatformInitializer;
+  private signalScheduler: SignalScheduler;
+  private statusManager: ServiceStatusManager;
 
   constructor() {
     this.instanceId = globalBackgroundManager.generateInstanceId();
@@ -34,6 +36,19 @@ export class BackgroundServiceCore {
       this.audioManager
     );
     this.appStateManager = new AppStateManager(this.instanceId, this.notificationManager);
+    this.platformInitializer = new PlatformInitializer(
+      this.notificationManager,
+      this.appStateManager,
+      this.audioOnlyModeManager
+    );
+    this.signalScheduler = new SignalScheduler(this.notificationManager, this.platformInitializer);
+    this.statusManager = new ServiceStatusManager(
+      this.instanceId,
+      this.audioManager,
+      this.notificationManager,
+      this.monitoringManager,
+      this.appStateManager
+    );
     
     this.monitoringManager.setAudioOnlyMode(this.audioOnlyModeManager.getAudioOnlyMode());
   }
@@ -52,47 +67,18 @@ export class BackgroundServiceCore {
       console.log('🚀 Initializing background service instance:', this.instanceId);
       
       if (nativeAndroidManager.isAndroidNative()) {
-        await this.initializeNativeAndroid();
+        await this.platformInitializer.initializeNativeAndroid();
       } else {
-        await this.initializeWebPlatform();
+        await this.platformInitializer.initializeWebPlatform();
       }
 
       this.monitoringManager.setAudioOnlyMode(this.audioOnlyModeManager.getAudioOnlyMode());
       this.monitoringManager.startBackgroundMonitoring();
-      this.debugBackgroundStatus();
+      this.statusManager.debugBackgroundStatus();
       
       console.log('🚀 Background service initialized successfully');
     } catch (error) {
       console.error('🚀 Failed to initialize background service:', error);
-    }
-  }
-
-  private async initializeNativeAndroid(): Promise<void> {
-    console.log('🤖 Native Android detected, using native features');
-    
-    await nativeAndroidManager.requestBatteryOptimization();
-    await nativeAndroidManager.startForegroundService();
-    
-    const permissions = await nativeAndroidManager.checkNativePermissions();
-    if (permissions) {
-      console.log('🤖 Native permissions status:', permissions);
-    }
-  }
-
-  private async initializeWebPlatform(): Promise<void> {
-    console.log('🌐 Web platform detected, using web features');
-    
-    if (!this.audioOnlyModeManager.getAudioOnlyMode()) {
-      await this.notificationManager.requestPermissions();
-    }
-
-    if (!this.appStateManager.isAppStateListenerInitialized()) {
-      await this.appStateManager.setupAppStateListeners();
-    }
-    
-    if (PlatformUtils.isAndroidPlatform()) {
-      await this.startForegroundServiceNotification();
-      await this.requestBatteryOptimizationBypass();
     }
   }
 
@@ -125,39 +111,11 @@ export class BackgroundServiceCore {
 
   // Notification methods
   async scheduleAllSignals(signals: Signal[]): Promise<void> {
-    const antidelaySeconds = loadAntidelayFromStorage();
-    
-    if (nativeAndroidManager.isAndroidNative()) {
-      const nativeSuccess = await nativeAndroidManager.scheduleNativeAlarms(signals, antidelaySeconds);
-      if (nativeSuccess) {
-        console.log('🤖 Using native Android alarms');
-        return;
-      }
-    }
-    
-    await this.notificationManager.scheduleAllSignals(signals, antidelaySeconds);
-
-    if (PlatformUtils.isAndroidPlatform()) {
-      await AndroidAlarmManager.scheduleAlarms(signals, antidelaySeconds);
-      await this.startForegroundServiceNotification();
-    }
+    await this.signalScheduler.scheduleAllSignals(signals);
   }
 
   async cancelAllScheduledNotifications(): Promise<void> {
-    if (nativeAndroidManager.isAndroidNative()) {
-      const nativeSuccess = await nativeAndroidManager.cancelNativeAlarms();
-      if (nativeSuccess) {
-        await nativeAndroidManager.stopForegroundService();
-        console.log('🤖 Using native Android cancellation');
-        return;
-      }
-    }
-    
-    await this.notificationManager.cancelAllScheduledNotifications();
-    if (PlatformUtils.isAndroidPlatform()) {
-      await AndroidAlarmManager.cancelAllAlarms();
-      await this.stopForegroundServiceNotification();
-    }
+    await this.signalScheduler.cancelAllScheduledNotifications();
   }
 
   async cleanup(): Promise<void> {
@@ -174,38 +132,22 @@ export class BackgroundServiceCore {
   }
 
   async requestBatteryOptimizationBypass(): Promise<void> {
-    if (PlatformUtils.isAndroidPlatform()) {
-      await AndroidBatteryManager.requestBatteryOptimizationBypass();
-    }
+    await this.platformInitializer.requestBatteryOptimizationBypass();
   }
 
   async startForegroundServiceNotification(): Promise<void> {
-    if (PlatformUtils.isAndroidPlatform()) {
-      await AndroidForegroundService.getInstance().start();
-    }
+    await this.platformInitializer.startForegroundServiceNotification();
   }
 
   async stopForegroundServiceNotification(): Promise<void> {
-    if (PlatformUtils.isAndroidPlatform()) {
-      await AndroidForegroundService.getInstance().stop();
-    }
+    await this.platformInitializer.stopForegroundServiceNotification();
   }
 
   debugBackgroundStatus(): any {
-    const status = {
-      instanceId: this.instanceId,
-      appActive: this.appStateManager.getIsAppActive(),
-      audio: this.audioManager.getAudioInfo(),
-      notifIDs: this.notificationManager.getNotificationIds(),
-      bgMonitorActive: this.monitoringManager.isActive(),
-      globalStatus: globalBackgroundManager.getStatus()
-    };
-    console.log('[DEBUG STATUS] Background service:', status);
-    (window as any).bgServiceDebug = status;
-    return status;
+    return this.statusManager.debugBackgroundStatus();
   }
 
   getStatus(): any {
-    return this.debugBackgroundStatus();
+    return this.statusManager.getStatus();
   }
 }
